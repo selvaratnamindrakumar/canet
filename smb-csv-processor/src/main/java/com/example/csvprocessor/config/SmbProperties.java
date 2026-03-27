@@ -49,10 +49,11 @@ public class SmbProperties {
 
     /**
      * Minimum SMB protocol version sent during negotiation.
-     * Accepted values: SMB1, SMB202, SMB210, SMB2, SMB30, SMB302, SMB311.
-     * Recommended: SMB2 or higher for secure environments.
+     * Accepted values match jcifs.DialectVersion enum: SMB1, SMB202, SMB210,
+     * SMB300, SMB302, SMB311.
+     * SMB202 is the minimum for SMB 2.x — do NOT use the old alias "SMB2".
      */
-    private String minSmbVersion = "SMB2";
+    private String minSmbVersion = "SMB202";
 
     /** Maximum SMB protocol version. */
     private String maxSmbVersion = "SMB311";
