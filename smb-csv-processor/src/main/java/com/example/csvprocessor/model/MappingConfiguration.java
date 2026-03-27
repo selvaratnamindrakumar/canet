@@ -31,6 +31,16 @@ public class MappingConfiguration {
      */
     private int skipLines = 0;
 
+    /**
+     * Output format for the CSV file.
+     * <ul>
+     *   <li>{@code STANDARD} — plain comma-separated values (default)</li>
+     *   <li>{@code QUOTED_UPPERCASE} — all column headers and values quoted and upper-cased,
+     *       as required by the IE/AA export specification: {@code "MCC","MNC",...}</li>
+     * </ul>
+     */
+    private String outputFormat = "QUOTED_UPPERCASE";
+
     /** Ordered list of field mappings. */
     private List<FieldMapping> fields = new ArrayList<>();
 
@@ -53,8 +63,16 @@ public class MappingConfiguration {
     public int getSkipLines() { return skipLines; }
     public void setSkipLines(int skipLines) { this.skipLines = skipLines; }
 
+    public String getOutputFormat() { return outputFormat; }
+    public void setOutputFormat(String outputFormat) { this.outputFormat = outputFormat; }
+
     public List<FieldMapping> getFields() { return fields; }
     public void setFields(List<FieldMapping> fields) {
         this.fields = fields != null ? fields : new ArrayList<>();
+    }
+
+    /** Returns {@code true} when the output must use the IE/AA quoted-uppercase format. */
+    public boolean isQuotedUppercaseOutput() {
+        return "QUOTED_UPPERCASE".equalsIgnoreCase(outputFormat);
     }
 }

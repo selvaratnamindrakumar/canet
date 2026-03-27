@@ -13,7 +13,7 @@ public class ValidationRule {
      */
     private String pattern;
 
-    /** Minimum numeric value (inclusive).  Compared as {@link java.math.BigDecimal}. */
+    /** Minimum numeric value (inclusive). Compared as {@link java.math.BigDecimal}. */
     private String minValue;
 
     /** Maximum numeric value (inclusive). */
@@ -30,6 +30,20 @@ public class ValidationRule {
      * Comparison is case-sensitive unless a UPPERCASE/LOWERCASE transformation is applied first.
      */
     private List<String> allowedValues;
+
+    /**
+     * Numeric range constraint (inclusive on both bounds).
+     * Provides a more readable alternative to {@code minValue} + {@code maxValue}.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * validation:
+     *   range:
+     *     min: "1"
+     *     max: "999"
+     * }</pre>
+     */
+    private RangeRule range;
 
     // -------------------------------------------------------------------------
     // Getters / Setters
@@ -52,4 +66,7 @@ public class ValidationRule {
 
     public List<String> getAllowedValues() { return allowedValues; }
     public void setAllowedValues(List<String> allowedValues) { this.allowedValues = allowedValues; }
+
+    public RangeRule getRange() { return range; }
+    public void setRange(RangeRule range) { this.range = range; }
 }

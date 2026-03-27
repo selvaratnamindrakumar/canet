@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logback configuration for SMB CSV Processor.
+
+  Appenders:
+    CONSOLE      - coloured, human-readable output for local development
+    FILE_ROLLING - daily rolling file, 30-day retention, 1 GB cap per file
+    ASYNC_FILE   - async wrapper around FILE_ROLLING (non-blocking for high throughput)
+
+  Root level and package overrides are set in application.properties;
+  the levels below act as safe defaults that Spring Boot will override.
+-->
+<configuration scan="true" scanPeriod="30 seconds">
+
+    <!-- ================================================================
+         Properties
+         ================================================================ -->
+    <springProperty scope="context" name="LOG_FILE"
+                    source="logging.file.name"
+                    defaultValue="/var/log/smb-csv-processor/application.log"/>
+
+    <property name="CONSOLE_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) [%thread] %cyan(%logger{36}) - %msg%n"/>
+
+    <property name="FILE_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"/>
+
+    <!-- ================================================================
+         CONSOLE appender — coloured, suitable for development
+         ================================================================ -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- ================================================================
+         FILE_ROLLING appender — daily rotation, 30-day retention
+         ================================================================ -->
+    <appender name="FILE_ROLLING" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_FILE}</file>
+        <encoder>
+            <pattern>${FILE_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <!-- Daily rotation; gzip-compressed archives -->
+            <fileNamePattern>${LOG_FILE}.%d{yyyy-MM-dd}.%i.gz</fileNamePattern>
+            <maxFileSize>1GB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>10GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <!-- ================================================================
+         ASYNC_FILE — non-blocking wrapper, queue depth 2048
+         ================================================================ -->
+    <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>2048</queueSize>
+        <discardingThreshold>0</discardingThreshold>  <!-- keep all levels even under load -->
+        <includeCallerData>false</includeCallerData>
+        <appender-ref ref="FILE_ROLLING"/>
+    </appender>
+
+    <!-- ================================================================
+         Per-package log levels
+         ================================================================ -->
+    <logger name="com.example.csvprocessor" level="DEBUG" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <logger name="org.apache.camel" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- Reduce jcifs-ng verbosity; set to DEBUG for SMB wire diagnostics -->
+    <logger name="jcifs" level="WARN" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- Spring framework — INFO is sufficient in production -->
+    <logger name="org.springframework" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- ================================================================
+         Root logger
+         ================================================================ -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </root>
+
+</configuration>
