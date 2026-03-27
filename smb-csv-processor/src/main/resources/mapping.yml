@@ -1,0 +1,177 @@
+# =============================================================================
+# Field mapping configuration
+# =============================================================================
+#
+# This file drives the CsvRowProcessor.  Edit the "fields" list to match your
+# actual CSV structure.  The application must be restarted to pick up changes.
+#
+# Field mapping keys:
+#   sourceColumnIndex  - zero-based column position (used when hasHeader=false,
+#                        or as fallback when sourceColumnName is absent)
+#   sourceColumnName   - header name in the source CSV (used when hasHeader=true)
+#   targetColumnName   - column header written to the output file
+#   type               - STRING | INTEGER | DECIMAL | DATE | BOOLEAN
+#   required           - true/false; empty required field → quarantine
+#   defaultValue       - written when field is empty and required=false
+#   transformations    - ordered list: TRIM, UPPERCASE, LOWERCASE,
+#                        REMOVE_SPACES, NUMERIC_ONLY, REMOVE_NON_PRINTABLE
+#   validation:
+#     pattern          - Java regex (String.matches) — full-string match
+#     minValue         - inclusive lower bound (numeric comparison)
+#     maxValue         - inclusive upper bound (numeric comparison)
+#     minLength        - minimum character count
+#     maxLength        - maximum character count
+#     allowedValues    - exhaustive list of accepted values
+# =============================================================================
+
+mapping:
+
+  # ---- Source file format -----------------------------------------------
+  inputDelimiter: ","
+  hasHeader: true
+  encoding: "UTF-8"
+  skipLines: 0          # extra non-header rows to skip after the header line
+
+  # ---- Output file format -----------------------------------------------
+  outputDelimiter: ","
+
+  # ---- Field definitions ------------------------------------------------
+  fields:
+
+    # --- Identity ----------------------------------------------------------
+    - sourceColumnIndex: 0
+      sourceColumnName: "customer_id"
+      targetColumnName: "CUSTOMER_ID"
+      type: STRING
+      required: true
+      transformations:
+        - TRIM
+        - UPPERCASE
+        - REMOVE_SPACES
+      validation:
+        pattern: "[A-Z0-9]{6,20}"
+        minLength: 6
+        maxLength: 20
+
+    - sourceColumnIndex: 1
+      sourceColumnName: "first_name"
+      targetColumnName: "FIRST_NAME"
+      type: STRING
+      required: true
+      transformations:
+        - TRIM
+        - REMOVE_NON_PRINTABLE
+      validation:
+        minLength: 1
+        maxLength: 50
+
+    - sourceColumnIndex: 2
+      sourceColumnName: "last_name"
+      targetColumnName: "LAST_NAME"
+      type: STRING
+      required: true
+      transformations:
+        - TRIM
+        - REMOVE_NON_PRINTABLE
+      validation:
+        minLength: 1
+        maxLength: 50
+
+    # --- Contact -----------------------------------------------------------
+    - sourceColumnIndex: 3
+      sourceColumnName: "email"
+      targetColumnName: "EMAIL_ADDRESS"
+      type: STRING
+      required: false
+      defaultValue: ""
+      transformations:
+        - TRIM
+        - LOWERCASE
+      validation:
+        # Basic RFC 5322 pattern — adjust as needed
+        pattern: "^[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}$"
+        maxLength: 254
+
+    - sourceColumnIndex: 4
+      sourceColumnName: "phone"
+      targetColumnName: "PHONE_NUMBER"
+      type: STRING
+      required: false
+      defaultValue: ""
+      transformations:
+        - TRIM
+        - NUMERIC_ONLY
+      validation:
+        minLength: 7
+        maxLength: 15
+
+    # --- Financial ---------------------------------------------------------
+    - sourceColumnIndex: 5
+      sourceColumnName: "amount"
+      targetColumnName: "TRANSACTION_AMOUNT"
+      type: DECIMAL
+      required: true
+      transformations:
+        - TRIM
+        - NUMERIC_ONLY
+      validation:
+        minValue: "0.00"
+        maxValue: "9999999.99"
+
+    - sourceColumnIndex: 6
+      sourceColumnName: "currency"
+      targetColumnName: "CURRENCY_CODE"
+      type: STRING
+      required: true
+      transformations:
+        - TRIM
+        - UPPERCASE
+      validation:
+        pattern: "[A-Z]{3}"
+        allowedValues:
+          - "USD"
+          - "EUR"
+          - "GBP"
+          - "CAD"
+          - "AUD"
+
+    # --- Status ------------------------------------------------------------
+    - sourceColumnIndex: 7
+      sourceColumnName: "status"
+      targetColumnName: "STATUS"
+      type: STRING
+      required: true
+      transformations:
+        - TRIM
+        - UPPERCASE
+      validation:
+        allowedValues:
+          - "ACTIVE"
+          - "INACTIVE"
+          - "PENDING"
+          - "CANCELLED"
+
+    # --- Date --------------------------------------------------------------
+    - sourceColumnIndex: 8
+      sourceColumnName: "transaction_date"
+      targetColumnName: "TRANSACTION_DATE"
+      type: DATE
+      required: true
+      transformations:
+        - TRIM
+      validation:
+        # ISO-8601 date pattern
+        pattern: "\\d{4}-\\d{2}-\\d{2}"
+
+    # --- Reference (optional) ----------------------------------------------
+    - sourceColumnIndex: 9
+      sourceColumnName: "reference"
+      targetColumnName: "REFERENCE_NUMBER"
+      type: STRING
+      required: false
+      defaultValue: ""
+      transformations:
+        - TRIM
+        - UPPERCASE
+      validation:
+        maxLength: 100

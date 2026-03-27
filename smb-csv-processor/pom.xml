@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        Spring Boot 2.7.18 (last 2.7.x release — Java 8 compatible, widely mirrored,
+        suitable for air-gapped / secure environments).
+        Apache Camel 3.14.10 LTS — the last long-term-support release of Camel 3.x.
+        JCIFS-NG 2.1.3 — the maintained JCIFS fork; supports SMB2/SMB3 + NTLMv2.
+        Note: spring-integration-smb is available in the core from Spring Integration 6.x
+        (Spring Boot 3.x). For Spring Boot 2.7.x we wrap jcifs-ng with Spring's
+        @InboundChannelAdapter / MessageSource pattern directly (no extensions needed).
+    -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>2.7.18</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.example</groupId>
+    <artifactId>smb-csv-processor</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>SMB CSV Processor</name>
+    <description>
+        Downloads large zipped CSVs from an SMB share, extracts them, processes
+        each row through a YAML-driven mapping / validation pipeline, writes valid
+        rows to a success file (then SFTPs to a remote server) and quarantines
+        invalid rows with an error-reason column.
+    </description>
+
+    <properties>
+        <java.version>11</java.version>
+        <!-- Camel 3.14.x is the last 3.x LTS — safe for restricted environments -->
+        <camel.version>3.14.10</camel.version>
+        <!-- jcifs-ng: SMB2/SMB3 capable, replaces the legacy jcifs 1.x -->
+        <jcifs-ng.version>2.1.3</jcifs-ng.version>
+        <commons-compress.version>1.21</commons-compress.version>
+        <commons-csv.version>1.9.0</commons-csv.version>
+        <!-- JSch 0.1.55 — included transitively via camel-ftp but pinned for clarity -->
+        <jsch.version>0.1.55</jsch.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Import Camel BOM so individual camel artifacts do not need versions -->
+            <dependency>
+                <groupId>org.apache.camel.springboot</groupId>
+                <artifactId>camel-spring-boot-bom</artifactId>
+                <version>${camel.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- ============================================================
+             Spring Boot core
+             ============================================================ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- Spring Integration: channels, @InboundChannelAdapter, @ServiceActivator -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-integration</artifactId>
+        </dependency>
+
+        <!-- Configuration-processor generates IDE metadata for @ConfigurationProperties -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- ============================================================
+             Apache Camel — file routing, SFTP upload
+             ============================================================ -->
+        <dependency>
+            <groupId>org.apache.camel.springboot</groupId>
+            <artifactId>camel-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- camel-ftp brings both FTP (commons-net) and SFTP (JSch) support -->
+        <dependency>
+            <groupId>org.apache.camel.springboot</groupId>
+            <artifactId>camel-ftp-starter</artifactId>
+        </dependency>
+
+        <!-- ============================================================
+             SMB connectivity — jcifs-ng (SMB2 / SMB3 / NTLMv2)
+             ============================================================ -->
+        <dependency>
+            <groupId>eu.agno3.jcifs</groupId>
+            <artifactId>jcifs-ng</artifactId>
+            <version>${jcifs-ng.version}</version>
+        </dependency>
+
+        <!-- ============================================================
+             CSV parsing — Apache Commons CSV (streaming, no full-load)
+             ============================================================ -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>${commons-csv.version}</version>
+        </dependency>
+
+        <!-- ============================================================
+             ZIP streaming — Apache Commons Compress
+             ============================================================ -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>${commons-compress.version}</version>
+        </dependency>
+
+        <!-- ============================================================
+             YAML — SnakeYAML (already on classpath via spring-boot but
+             declared explicitly to document the dependency)
+             ============================================================ -->
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <!-- version managed by spring-boot-starter-parent -->
+        </dependency>
+
+        <!-- ============================================================
+             Test
+             ============================================================ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-test-spring-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Fat-jar for deployment to isolated environments -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

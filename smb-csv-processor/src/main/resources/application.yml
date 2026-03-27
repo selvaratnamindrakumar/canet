@@ -1,0 +1,86 @@
+# =============================================================================
+# SMB → CSV Processor — application configuration
+# Override any value with environment variables (Spring convention):
+#   SMB_HOST=myserver  or  --smb.host=myserver
+# =============================================================================
+
+spring:
+  application:
+    name: smb-csv-processor
+  # Disable web server — this is a batch/daemon application
+  main:
+    web-application-type: none
+
+# =============================================================================
+# SMB source share
+# =============================================================================
+smb:
+  host: smb-server.example.com        # Required
+  port: 445
+  domain: ""                           # Leave blank for local/workgroup accounts
+  username: svc_reader                 # Required — use a read-only service account
+  password: change_me                  # Required — prefer env-var: SMB_PASSWORD
+
+  share-name: shared                   # e.g.  \\server\shared
+  remote-directory: /uploads/daily     # Path inside the share; must start with /
+  file-pattern: "*.zip"                # Glob matched locally after listing
+  polling-interval-ms: 300000          # 5 minutes
+
+  # SMB protocol settings
+  min-smb-version: SMB2                # SMB2 minimum — disables legacy SMB1
+  max-smb-version: SMB311
+  connect-timeout-ms: 30000
+  response-timeout-ms: 60000
+
+# =============================================================================
+# SFTP destination
+# =============================================================================
+sftp:
+  host: sftp-server.example.com        # Required
+  port: 22
+  username: svc_uploader               # Required
+  # Preferred: private-key auth
+  private-key-path: /opt/app/.ssh/id_rsa
+  private-key-passphrase: ""           # Leave blank if key has no passphrase
+  # Alternative: password auth (used when private-key-path is blank)
+  # password: change_me
+  known-hosts-file: /opt/app/.ssh/known_hosts
+  remote-directory: /inbound/processed
+  connect-timeout-ms: 30000
+
+# =============================================================================
+# Local processing directories
+# All directories are created automatically at startup.
+# =============================================================================
+processing:
+  directories:
+    input-zip: /data/processor/input/zip          # Downloaded ZIPs land here
+    input-csv: /data/processor/input/csv          # Extracted CSVs land here
+    output-success: /data/processor/output/success        # Valid output CSVs
+    output-quarantine: /data/processor/output/quarantine  # Invalid row files
+    output-archive: /data/processor/output/archive        # Post-upload archive
+
+# =============================================================================
+# Apache Camel
+# =============================================================================
+camel:
+  springboot:
+    name: smb-csv-processor-camel
+    # Prevent Camel from shutting down if no routes have messages yet
+    main-run-controller: true
+  # Increase shutdown timeout for large in-flight files (seconds)
+  springboot.shutdown-timeout: 300
+
+# =============================================================================
+# Logging
+# =============================================================================
+logging:
+  level:
+    root: INFO
+    com.example.csvprocessor: DEBUG
+    org.apache.camel: INFO
+    jcifs: WARN        # Reduce jcifs-ng verbosity; set to DEBUG for SMB diagnostics
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: /var/log/smb-csv-processor/application.log
