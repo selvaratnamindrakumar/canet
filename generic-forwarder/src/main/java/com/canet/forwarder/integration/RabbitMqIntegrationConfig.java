@@ -34,21 +34,32 @@ public class RabbitMqIntegrationConfig {
         ForwarderProperties.Ssl      ssl    = props.getSource().getSsl();
 
         RabbitConnectionFactoryBean factoryBean = new RabbitConnectionFactoryBean();
+
+        // ── Connection ─────────────────────────────────────────────────────
         factoryBean.setHost(rabbit.getHost());
         factoryBean.setPort(rabbit.getPort());
         factoryBean.setUsername(rabbit.getUsername());
         factoryBean.setPassword(rabbit.getPassword());
         factoryBean.setVirtualHost(rabbit.getVirtualHost());
 
+        // ── Timeouts ───────────────────────────────────────────────────────
+        factoryBean.setConnectionTimeout(rabbit.getConnectionTimeoutMs());
+        factoryBean.setHandshakeTimeout(rabbit.getHandshakeTimeoutMs());
+
+        // ── Keep-alive / heartbeat ─────────────────────────────────────────
+        factoryBean.setRequestedHeartbeat(rabbit.getRequestedHeartbeat());
+        factoryBean.setRequestedChannelMax(rabbit.getRequestedChannelMax());
+
+        // ── SSL / AMQPS ────────────────────────────────────────────────────
         if (ssl.isEnabled()) {
-            log.info("RabbitMQ SSL enabled");
+            log.info("RabbitMQ SSL/TLS enabled");
             factoryBean.setUseSSL(true);
-            if (ssl.getKeystorePath() != null) {
+            if (ssl.getKeystorePath() != null && !ssl.getKeystorePath().isBlank()) {
                 factoryBean.setKeyStore(ssl.getKeystorePath());
                 factoryBean.setKeyStorePassphrase(ssl.getKeystorePassword());
                 factoryBean.setKeyStoreType(ssl.getKeystoreType());
             }
-            if (ssl.getTruststorePath() != null) {
+            if (ssl.getTruststorePath() != null && !ssl.getTruststorePath().isBlank()) {
                 factoryBean.setTrustStore(ssl.getTruststorePath());
                 factoryBean.setTrustStorePassphrase(ssl.getTruststorePassword());
                 factoryBean.setTrustStoreType(ssl.getTruststoreType());
@@ -56,8 +67,12 @@ public class RabbitMqIntegrationConfig {
         }
 
         factoryBean.afterPropertiesSet();
+
         CachingConnectionFactory ccf = new CachingConnectionFactory(factoryBean.getObject());
-        log.info("RabbitMQ connection factory created, host={}:{}", rabbit.getHost(), rabbit.getPort());
+
+        log.info("RabbitMQ connection factory: host={}:{}, vhost={}, queue={}, ssl={}",
+                rabbit.getHost(), rabbit.getPort(), rabbit.getVirtualHost(),
+                rabbit.getQueue(), ssl.isEnabled());
         return ccf;
     }
 
@@ -69,7 +84,15 @@ public class RabbitMqIntegrationConfig {
         container.setConnectionFactory(rabbitConnectionFactory());
         container.setQueueNames(rabbit.getQueue());
         container.setAcknowledgeMode(AcknowledgeMode.AUTO);
+
+        // ── QoS / concurrency ──────────────────────────────────────────────
         container.setPrefetchCount(rabbit.getPrefetchCount());
+        container.setConcurrentConsumers(rabbit.getConcurrentConsumers());
+        container.setMaxConcurrentConsumers(rabbit.getMaxConcurrentConsumers());
+
+        // ── Recovery ───────────────────────────────────────────────────────
+        container.setRecoveryInterval(rabbit.getRecoveryIntervalMs());
+
         return container;
     }
 
@@ -77,7 +100,6 @@ public class RabbitMqIntegrationConfig {
     public AmqpInboundChannelAdapter rabbitInboundAdapter() throws Exception {
         AmqpInboundChannelAdapter adapter = new AmqpInboundChannelAdapter(rabbitListenerContainer());
         adapter.setOutputChannel(forwarderInputChannel);
-        log.info("RabbitMQ inbound adapter configured, queue={}", props.getSource().getRabbitmq().getQueue());
         return adapter;
     }
 }

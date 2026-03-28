@@ -11,6 +11,7 @@ import org.springframework.integration.file.FileReadingMessageSource;
 import org.springframework.integration.file.filters.AcceptOnceFileListFilter;
 import org.springframework.integration.file.filters.CompositeFileListFilter;
 import org.springframework.integration.file.filters.RegexPatternFileListFilter;
+import org.springframework.integration.file.filters.SimplePatternFileListFilter;
 import org.springframework.messaging.MessageChannel;
 
 import com.canet.forwarder.config.ForwarderProperties;
@@ -41,6 +42,11 @@ public class FileIntegrationConfig {
         filter.addFilter(new RegexPatternFileListFilter(fileCfg.getFilePattern()));
         filter.addFilter(new AcceptOnceFileListFilter<>());
 
+        // Optional: skip files that exceed the configured size limit
+        if (fileCfg.getMaxFileSizeBytes() > 0) {
+            filter.addFilter(f -> f.length() <= fileCfg.getMaxFileSizeBytes());
+        }
+
         FileReadingMessageSource source = new FileReadingMessageSource();
         source.setDirectory(new File(fileCfg.getDirectory()));
         source.setFilter(filter);
@@ -49,17 +55,23 @@ public class FileIntegrationConfig {
                 FileReadingMessageSource.WatchEventType.CREATE,
                 FileReadingMessageSource.WatchEventType.MODIFY);
 
-        log.info("File inbound adapter configured, directory={}, pattern={}",
-                fileCfg.getDirectory(), fileCfg.getFilePattern());
+        log.info("File inbound adapter: directory={}, pattern={}, maxSize={}, pollDelay={}ms",
+                fileCfg.getDirectory(), fileCfg.getFilePattern(),
+                fileCfg.getMaxFileSizeBytes() > 0 ? fileCfg.getMaxFileSizeBytes() + "B" : "unlimited",
+                fileCfg.getPollDelay());
         return source;
     }
 
     @Bean
     public IntegrationFlow fileInboundFlow() {
         ForwarderProperties.FileSource fileCfg = props.getSource().getFile();
+
+        var pollerSpec = fileCfg.getMaxFilesPerPoll() > 0
+                ? Pollers.fixedDelay(fileCfg.getPollDelay()).maxMessagesPerPoll(fileCfg.getMaxFilesPerPoll())
+                : Pollers.fixedDelay(fileCfg.getPollDelay());
+
         return IntegrationFlow
-                .from(fileMessageSource(),
-                        spec -> spec.poller(Pollers.fixedDelay(fileCfg.getPollDelay())))
+                .from(fileMessageSource(), spec -> spec.poller(pollerSpec))
                 .channel(forwarderInputChannel)
                 .get();
     }

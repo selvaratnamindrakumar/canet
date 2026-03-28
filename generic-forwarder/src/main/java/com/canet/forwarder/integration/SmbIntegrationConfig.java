@@ -1,5 +1,7 @@
 package com.canet.forwarder.integration;
 
+import java.io.File;
+
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,8 +20,6 @@ import jcifs.smb.NtlmPasswordAuthenticator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.File;
-
 /**
  * Spring Integration – SMB inbound adapter.
  * Polls a remote SMB share and forwards files to the common channel.
@@ -34,24 +34,38 @@ public class SmbIntegrationConfig {
     private final ForwarderProperties props;
     private final MessageChannel forwarderInputChannel;
 
-    /** Local staging directory where SMB files are synchronised before sending */
-    private static final String LOCAL_STAGING = System.getProperty("java.io.tmpdir") + "/smb-staging";
-
     @Bean
     public SmbSessionFactory smbSessionFactory() {
         ForwarderProperties.Smb smb = props.getSource().getSmb();
 
         SmbSessionFactory factory = new SmbSessionFactory();
+
+        // ── Connection ─────────────────────────────────────────────────────
         factory.setHost(smb.getHost());
+        factory.setPort(smb.getPort());
         factory.setShareAndDir(smb.getShare() + smb.getDirectory());
 
+        // ── Authentication ─────────────────────────────────────────────────
         NtlmPasswordAuthenticator auth = new NtlmPasswordAuthenticator(
                 smb.getDomain(),
                 smb.getUsername(),
                 smb.getPassword());
         factory.setAuthenticator(auth);
 
-        log.info("SMB session factory configured, host={}, share={}", smb.getHost(), smb.getShare());
+        // ── Protocol version ───────────────────────────────────────────────
+        factory.setSmbMinVersion(smb.getMinVersion());
+        factory.setSmbMaxVersion(smb.getMaxVersion());
+
+        // ── DFS ────────────────────────────────────────────────────────────
+        factory.setDfsEnabled(smb.isDfsEnabled());
+
+        // ── Timeouts ───────────────────────────────────────────────────────
+        factory.setSocketTimeout(smb.getSocketTimeoutMs());
+        factory.setResponseTimeout(smb.getResponseTimeoutMs());
+
+        log.info("SMB session factory: host={}:{}, share={}, dir={}, minVer={}, maxVer={}",
+                smb.getHost(), smb.getPort(), smb.getShare(), smb.getDirectory(),
+                smb.getMinVersion(), smb.getMaxVersion());
         return factory;
     }
 
@@ -68,9 +82,11 @@ public class SmbIntegrationConfig {
 
     @Bean
     public SmbInboundFileSynchronizingMessageSource smbMessageSource() {
+        ForwarderProperties.Smb smb = props.getSource().getSmb();
+
         SmbInboundFileSynchronizingMessageSource source =
                 new SmbInboundFileSynchronizingMessageSource(smbInboundFileSynchronizer());
-        source.setLocalDirectory(new File(LOCAL_STAGING));
+        source.setLocalDirectory(resolveLocalStaging(smb));
         source.setAutoCreateLocalDirectory(true);
         source.setLocalFilter(new AcceptOnceFileListFilter<>());
         return source;
@@ -78,10 +94,25 @@ public class SmbIntegrationConfig {
 
     @Bean
     public IntegrationFlow smbInboundFlow() {
-        long pollDelay = props.getSource().getSmb().getPollDelay();
+        ForwarderProperties.Smb smb = props.getSource().getSmb();
+
+        var pollerSpec = smb.getMaxFilesPerPoll() > 0
+                ? Pollers.fixedDelay(smb.getPollDelay()).maxMessagesPerPoll(smb.getMaxFilesPerPoll())
+                : Pollers.fixedDelay(smb.getPollDelay());
+
         return IntegrationFlow
-                .from(smbMessageSource(), spec -> spec.poller(Pollers.fixedDelay(pollDelay)))
+                .from(smbMessageSource(), spec -> spec.poller(pollerSpec))
                 .channel(forwarderInputChannel)
                 .get();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private static File resolveLocalStaging(ForwarderProperties.Smb smb) {
+        String path = smb.getLocalStagingDirectory();
+        if (path == null || path.isBlank()) {
+            path = System.getProperty("java.io.tmpdir") + "/smb-staging";
+        }
+        return new File(path);
     }
 }

@@ -5,6 +5,7 @@ import java.util.Map;
 
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.config.SaslConfigs;
 import org.apache.kafka.common.config.SslConfigs;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -39,19 +40,50 @@ public class KafkaIntegrationConfig {
     @Bean
     public ConsumerFactory<String, byte[]> kafkaConsumerFactory() {
         ForwarderProperties.Kafka kafka = props.getSource().getKafka();
-        ForwarderProperties.Ssl  ssl   = props.getSource().getSsl();
+        ForwarderProperties.Ssl   ssl   = props.getSource().getSsl();
 
         Map<String, Object> config = new HashMap<>();
-        config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,  kafka.getBootstrapServers());
-        config.put(ConsumerConfig.GROUP_ID_CONFIG,           kafka.getGroupId());
-        config.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,  kafka.getAutoOffsetReset());
+
+        // ── Connection ────────────────────────────────────────────────────────
+        config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,      kafka.getBootstrapServers());
+        config.put(ConsumerConfig.GROUP_ID_CONFIG,               kafka.getGroupId());
+        config.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG,     kafka.getRequestTimeoutMs());
+        config.put(ConsumerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG, kafka.getConnectionMaxIdleMs());
+        config.put(ConsumerConfig.RECONNECT_BACKOFF_MS_CONFIG,   kafka.getReconnectBackoffMs());
+        config.put(ConsumerConfig.RECONNECT_BACKOFF_MAX_MS_CONFIG, kafka.getReconnectBackoffMaxMs());
+
+        // ── Consumer behaviour ────────────────────────────────────────────────
+        config.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,      kafka.getAutoOffsetReset());
+        config.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG,     false);
+        config.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG,       kafka.getMaxPollRecords());
+        config.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG,   kafka.getMaxPollIntervalMs());
+        config.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG,     kafka.getSessionTimeoutMs());
+        config.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG,  kafka.getHeartbeatIntervalMs());
+
+        // ── Fetch tuning ──────────────────────────────────────────────────────
+        config.put(ConsumerConfig.FETCH_MIN_BYTES_CONFIG,        kafka.getFetchMinBytes());
+        config.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG,      kafka.getFetchMaxWaitMs());
+
+        // ── Deserializers ─────────────────────────────────────────────────────
         config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,   StringDeserializer.class);
         config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
-        config.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
 
-        if (ssl.isEnabled()) {
-            log.info("Kafka SSL enabled");
-            config.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SSL");
+        // ── Security protocol ─────────────────────────────────────────────────
+        String protocol = kafka.getSecurityProtocol();
+        config.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, protocol);
+
+        if (protocol.contains("SASL")) {
+            log.info("Kafka SASL enabled, mechanism={}", kafka.getSaslMechanism());
+            config.put(SaslConfigs.SASL_MECHANISM, kafka.getSaslMechanism());
+            if (kafka.getSaslJaasConfig() != null && !kafka.getSaslJaasConfig().isBlank()) {
+                config.put(SaslConfigs.SASL_JAAS_CONFIG, kafka.getSaslJaasConfig());
+            }
+        }
+
+        if (protocol.contains("SSL") || ssl.isEnabled()) {
+            log.info("Kafka SSL/TLS enabled");
+            config.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG,
+                    protocol.contains("SASL") ? "SASL_SSL" : "SSL");
             config.put(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG,   ssl.getKeystorePath());
             config.put(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG,   ssl.getKeystorePassword());
             config.put(SslConfigs.SSL_KEYSTORE_TYPE_CONFIG,       ssl.getKeystoreType());
@@ -59,6 +91,9 @@ public class KafkaIntegrationConfig {
             config.put(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG, ssl.getTruststorePassword());
             config.put(SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG,     ssl.getTruststoreType());
         }
+
+        log.info("Kafka consumer factory: servers={}, topic={}, group={}, protocol={}",
+                kafka.getBootstrapServers(), kafka.getTopic(), kafka.getGroupId(), protocol);
 
         return new DefaultKafkaConsumerFactory<>(config);
     }
@@ -76,7 +111,6 @@ public class KafkaIntegrationConfig {
         KafkaMessageDrivenChannelAdapter<String, byte[]> adapter =
                 new KafkaMessageDrivenChannelAdapter<>(kafkaListenerContainer());
         adapter.setOutputChannel(forwarderInputChannel);
-        log.info("Kafka inbound adapter configured, topic={}", props.getSource().getKafka().getTopic());
         return adapter;
     }
 }
