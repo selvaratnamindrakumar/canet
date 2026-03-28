@@ -1,0 +1,161 @@
+# =============================================================================
+#  docker-compose.yml — Generic Message Forwarder
+#
+#  Four pre-configured service profiles, one per source type.
+#  Start only the one you need, e.g.:
+#    docker compose --profile kafka up
+#    docker compose --profile rabbitmq up
+#    docker compose --profile smb up
+#    docker compose --profile file up
+# =============================================================================
+
+version: "3.9"
+
+x-forwarder-common: &forwarder-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: canet/generic-forwarder:latest
+  restart: unless-stopped
+  volumes:
+    - ./certs:/certs:ro          # mount keystore / truststore files
+    - ./config:/app/config:ro    # optional: override application.properties
+  environment:
+    JAVA_OPTS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+    # Endpoint settings (common to all profiles)
+    ENDPOINT_URL:         ${ENDPOINT_URL:-https://api.example.com/ingest}
+    ENDPOINT_FEED:        ${ENDPOINT_FEED:-my-feed}
+    ENDPOINT_ENVIRONMENT: ${ENDPOINT_ENVIRONMENT:-dev}
+
+services:
+
+  # ── Kafka forwarder ─────────────────────────────────────────────────────────
+  forwarder-kafka:
+    <<: *forwarder-common
+    profiles: ["kafka"]
+    container_name: forwarder-kafka
+    environment:
+      <<: *forwarder-common
+      SOURCE_TYPE: kafka
+      SOURCE_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      SOURCE_KAFKA_TOPIC:             ${KAFKA_TOPIC:-forwarder-input}
+      SOURCE_KAFKA_GROUP_ID:          ${KAFKA_GROUP_ID:-generic-forwarder}
+      # Input SSL
+      SOURCE_SSL_ENABLED:              ${INPUT_SSL_ENABLED:-false}
+      SOURCE_SSL_KEYSTORE_PATH:        /certs/input-keystore.jks
+      SOURCE_SSL_KEYSTORE_PASSWORD:    ${INPUT_KEYSTORE_PASSWORD:-changeit}
+      SOURCE_SSL_TRUSTSTORE_PATH:      /certs/input-truststore.jks
+      SOURCE_SSL_TRUSTSTORE_PASSWORD:  ${INPUT_TRUSTSTORE_PASSWORD:-changeit}
+      # Output SSL
+      ENDPOINT_SSL_ENABLED:            ${OUTPUT_SSL_ENABLED:-false}
+      ENDPOINT_SSL_KEYSTORE_PATH:      /certs/output-keystore.jks
+      ENDPOINT_SSL_KEYSTORE_PASSWORD:  ${OUTPUT_KEYSTORE_PASSWORD:-changeit}
+      ENDPOINT_SSL_TRUSTSTORE_PATH:    /certs/output-truststore.jks
+      ENDPOINT_SSL_TRUSTSTORE_PASSWORD: ${OUTPUT_TRUSTSTORE_PASSWORD:-changeit}
+    depends_on:
+      - kafka
+
+  # ── RabbitMQ forwarder ──────────────────────────────────────────────────────
+  forwarder-rabbitmq:
+    <<: *forwarder-common
+    profiles: ["rabbitmq"]
+    container_name: forwarder-rabbitmq
+    environment:
+      <<: *forwarder-common
+      SOURCE_TYPE: rabbitmq
+      SOURCE_RABBITMQ_HOST:         ${RABBITMQ_HOST:-rabbitmq}
+      SOURCE_RABBITMQ_PORT:         ${RABBITMQ_PORT:-5672}
+      SOURCE_RABBITMQ_USERNAME:     ${RABBITMQ_USERNAME:-guest}
+      SOURCE_RABBITMQ_PASSWORD:     ${RABBITMQ_PASSWORD:-guest}
+      SOURCE_RABBITMQ_QUEUE:        ${RABBITMQ_QUEUE:-forwarder-input}
+      SOURCE_RABBITMQ_VIRTUAL_HOST: ${RABBITMQ_VHOST:-/}
+      # Input SSL
+      SOURCE_SSL_ENABLED:              ${INPUT_SSL_ENABLED:-false}
+      SOURCE_SSL_KEYSTORE_PATH:        /certs/input-keystore.jks
+      SOURCE_SSL_KEYSTORE_PASSWORD:    ${INPUT_KEYSTORE_PASSWORD:-changeit}
+      SOURCE_SSL_TRUSTSTORE_PATH:      /certs/input-truststore.jks
+      SOURCE_SSL_TRUSTSTORE_PASSWORD:  ${INPUT_TRUSTSTORE_PASSWORD:-changeit}
+      # Output SSL
+      ENDPOINT_SSL_ENABLED:            ${OUTPUT_SSL_ENABLED:-false}
+      ENDPOINT_SSL_KEYSTORE_PATH:      /certs/output-keystore.jks
+      ENDPOINT_SSL_KEYSTORE_PASSWORD:  ${OUTPUT_KEYSTORE_PASSWORD:-changeit}
+      ENDPOINT_SSL_TRUSTSTORE_PATH:    /certs/output-truststore.jks
+      ENDPOINT_SSL_TRUSTSTORE_PASSWORD: ${OUTPUT_TRUSTSTORE_PASSWORD:-changeit}
+    depends_on:
+      - rabbitmq
+
+  # ── SMB forwarder ───────────────────────────────────────────────────────────
+  forwarder-smb:
+    <<: *forwarder-common
+    profiles: ["smb"]
+    container_name: forwarder-smb
+    environment:
+      <<: *forwarder-common
+      SOURCE_TYPE: smb
+      SOURCE_SMB_HOST:         ${SMB_HOST:-smb-server}
+      SOURCE_SMB_SHARE:        ${SMB_SHARE:-myshare}
+      SOURCE_SMB_DIRECTORY:    ${SMB_DIRECTORY:-/incoming}
+      SOURCE_SMB_USERNAME:     ${SMB_USERNAME:-smbuser}
+      SOURCE_SMB_PASSWORD:     ${SMB_PASSWORD:-smbpass}
+      SOURCE_SMB_DOMAIN:       ${SMB_DOMAIN:-WORKGROUP}
+      SOURCE_SMB_FILE_PATTERN: ${SMB_FILE_PATTERN:-*.*}
+      SOURCE_SMB_POLL_DELAY:   ${SMB_POLL_DELAY:-5000}
+      SOURCE_SMB_DELETE_AFTER_READ: ${SMB_DELETE_AFTER_READ:-false}
+      # Output SSL
+      ENDPOINT_SSL_ENABLED:            ${OUTPUT_SSL_ENABLED:-false}
+      ENDPOINT_SSL_KEYSTORE_PATH:      /certs/output-keystore.jks
+      ENDPOINT_SSL_KEYSTORE_PASSWORD:  ${OUTPUT_KEYSTORE_PASSWORD:-changeit}
+      ENDPOINT_SSL_TRUSTSTORE_PATH:    /certs/output-truststore.jks
+      ENDPOINT_SSL_TRUSTSTORE_PASSWORD: ${OUTPUT_TRUSTSTORE_PASSWORD:-changeit}
+
+  # ── File forwarder ──────────────────────────────────────────────────────────
+  forwarder-file:
+    <<: *forwarder-common
+    profiles: ["file"]
+    container_name: forwarder-file
+    volumes:
+      - ./certs:/certs:ro
+      - ./data/incoming:/data/incoming  # mount the folder to watch
+    environment:
+      <<: *forwarder-common
+      SOURCE_TYPE: file
+      SOURCE_FILE_DIRECTORY:    /data/incoming
+      SOURCE_FILE_FILE_PATTERN: "(?i).*\\.(log|xml|json|txt|csv|ndjson)$$"
+      SOURCE_FILE_POLL_DELAY:   ${FILE_POLL_DELAY:-5000}
+      # Output SSL
+      ENDPOINT_SSL_ENABLED:            ${OUTPUT_SSL_ENABLED:-false}
+      ENDPOINT_SSL_KEYSTORE_PATH:      /certs/output-keystore.jks
+      ENDPOINT_SSL_KEYSTORE_PASSWORD:  ${OUTPUT_KEYSTORE_PASSWORD:-changeit}
+      ENDPOINT_SSL_TRUSTSTORE_PATH:    /certs/output-truststore.jks
+      ENDPOINT_SSL_TRUSTSTORE_PASSWORD: ${OUTPUT_TRUSTSTORE_PASSWORD:-changeit}
+
+  # ── Infrastructure (optional helpers) ───────────────────────────────────────
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    profiles: ["kafka"]
+    container_name: kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    ports:
+      - "9092:9092"
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    profiles: ["rabbitmq"]
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # management UI
