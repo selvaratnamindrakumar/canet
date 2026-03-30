@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.canet.nexus</groupId>
+  <artifactId>nexus-deployer</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <name>Nexus Offline Repository Deployer</name>
+
+  <!--
+    Usage (offline secure environment):
+      mvn package \
+        -Drepo.zip.path=/path/to/repository.zip \
+        -Dnexus.url=http://nexus-host:8081/repository/maven-releases \
+        -Dnexus.username=admin \
+        -Dnexus.password=secret
+
+    Constraints:
+      - Maven  : 3.6.0 – 3.9.2
+      - Java   : 8 or 11
+      - Groovy : 2.4.7 (groovy-all)
+  -->
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+    <!-- ── Required deployment parameters ───────────────────────── -->
+    <!-- Absolute or project-relative path to the repository ZIP     -->
+    <repo.zip.path>repository.zip</repo.zip.path>
+
+    <!-- Nexus 3: http://host:8081/repository/<repo-name>            -->
+    <!-- Nexus 2: http://host:8081/nexus/content/repositories/<name> -->
+    <nexus.url>http://localhost:8081/repository/maven-releases</nexus.url>
+
+    <!-- Nexus credentials (pass via -D flags, not stored in SCM)    -->
+    <nexus.username></nexus.username>
+    <nexus.password></nexus.password>
+
+    <!-- Set to true to also PUT .md5 / .sha1 checksum sidecars      -->
+    <nexus.upload.checksums>false</nexus.upload.checksums>
+  </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.gmavenplus</groupId>
+        <artifactId>gmavenplus-plugin</artifactId>
+        <!-- 1.13.1 supports Groovy 1.5–3.x, Java 8+, Maven 3.6–3.9 -->
+        <version>1.13.1</version>
+
+        <dependencies>
+          <dependency>
+            <groupId>org.codehaus.groovy</groupId>
+            <artifactId>groovy-all</artifactId>
+            <version>2.4.7</version>
+          </dependency>
+        </dependencies>
+
+        <executions>
+          <execution>
+            <id>nexus-upload</id>
+            <phase>package</phase>
+            <goals>
+              <goal>execute</goal>
+            </goals>
+          </execution>
+        </executions>
+
+        <configuration>
+          <scripts>
+            <script>file:///${project.basedir}/maven-deployer.groovy</script>
+          </scripts>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>
