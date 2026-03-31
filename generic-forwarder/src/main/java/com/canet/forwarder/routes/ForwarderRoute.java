@@ -1,7 +1,6 @@
 package com.canet.forwarder.routes;
 
 import java.io.File;
-import java.nio.charset.StandardCharsets;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.LoggingLevel;
@@ -20,13 +19,11 @@ import lombok.extern.slf4j.Slf4j;
  * Main Camel route.
  *
  * Flow:
- *   spring-integration:forwarderInputChannel
- *     → normalise payload
+ *   direct:forwarderInput          ← fed by CamelBridge (@ServiceActivator)
  *     → enrich HTTP headers (X-Feed, X-Environment, Content-Type)
  *     → POST to endpoint.url (HTTPS with optional mTLS)
  *
- * The Spring Integration channel is populated by whichever source adapter
- * is active (Kafka / RabbitMQ / SMB / File).
+ * The Spring Integration → Camel hand-off is done in {@link CamelBridge}.
  */
 @Slf4j
 @Component
@@ -35,10 +32,6 @@ public class ForwarderRoute extends RouteBuilder {
     private final ForwarderProperties props;
     private final SSLContextParameters outputSslContextParameters;
 
-    /**
-     * outputSslContextParameters is optional – only present when
-     * {@code endpoint.ssl.enabled=true}.
-     */
     public ForwarderRoute(
             ForwarderProperties props,
             @Autowired(required = false)
@@ -51,10 +44,10 @@ public class ForwarderRoute extends RouteBuilder {
     @Override
     public void configure() {
 
-        // ── SSL on the Camel HTTP component ──────────────────────────────
+        // ── Output SSL on the Camel HTTPS component ──────────────────────
         if (outputSslContextParameters != null) {
-            HttpComponent http = getContext().getComponent("https", HttpComponent.class);
-            http.setSslContextParameters(outputSslContextParameters);
+            HttpComponent https = getContext().getComponent("https", HttpComponent.class);
+            https.setSslContextParameters(outputSslContextParameters);
             log.info("Output SSL configured on Camel HTTPS component");
         }
 
@@ -67,40 +60,24 @@ public class ForwarderRoute extends RouteBuilder {
                 .useExponentialBackOff());
 
         // ── Main route ───────────────────────────────────────────────────
-        from("spring-integration:forwarderInputChannel")
+        from("direct:forwarderInput")
             .routeId("forwarder-main")
-            .log(LoggingLevel.DEBUG, log.getName(), "Received message from source [${headers}]")
+            .log(LoggingLevel.DEBUG, log.getName(), "Forwarding message to endpoint")
 
-            // Normalise payload -------------------------------------------------
+            // File payloads – tell Camel to stream the file body
             .process(exchange -> {
-                Object body = exchange.getIn().getBody();
-
-                // Spring Integration wraps payloads in its own Message type
-                if (body instanceof org.springframework.messaging.Message<?> siMsg) {
-                    Object payload = siMsg.getPayload();
-                    exchange.getIn().setBody(toBytes(payload));
-                    // Preserve any SI headers that may be useful
-                    siMsg.getHeaders().forEach((k, v) -> {
-                        if (!"id".equals(k) && !"timestamp".equals(k)) {
-                            exchange.getIn().setHeader("SI_" + k, v);
-                        }
-                    });
-                } else if (body instanceof File file) {
-                    // File integration sends java.io.File objects
-                    exchange.getIn().setBody(file);
+                if (exchange.getIn().getBody() instanceof File file) {
                     exchange.getIn().setHeader(Exchange.FILE_NAME, file.getName());
-                } else {
-                    exchange.getIn().setBody(toBytes(body));
                 }
             })
 
             // HTTP headers -------------------------------------------------------
-            .setHeader(Exchange.HTTP_METHOD,  constant("POST"))
-            .setHeader("Content-Type",        constant(ep.getContentType()))
-            .setHeader("X-Feed",              constant(ep.getFeed()))
-            .setHeader("X-Environment",       constant(ep.getEnvironment()))
+            .setHeader(Exchange.HTTP_METHOD, constant("POST"))
+            .setHeader("Content-Type",       constant(ep.getContentType()))
+            .setHeader("X-Feed",             constant(ep.getFeed()))
+            .setHeader("X-Environment",      constant(ep.getEnvironment()))
 
-            // Remove headers that must not be forwarded to HTTP
+            // Strip Spring Integration headers before sending out
             .removeHeaders("SI_*")
             .removeHeader("breadcrumbId")
 
@@ -112,30 +89,15 @@ public class ForwarderRoute extends RouteBuilder {
                     + " [feed=" + ep.getFeed() + ", env=" + ep.getEnvironment() + "]");
     }
 
-    // ─── helpers ────────────────────────────────────────────────────────────
-
-    /**
-     * Builds the Camel HTTP URI from configured URL, adding required options.
-     * Handles both http:// and https:// schemes.
-     */
     private String resolveEndpointUri() {
         ForwarderProperties.Endpoint ep = props.getEndpoint();
         String url = ep.getUrl();
-
-        // Strip leading scheme so we can use toD() with the camel http component
-        // Camel's http/https component URI: https://host/path?options
-        String separator = url.contains("?") ? "&" : "?";
+        String sep = url.contains("?") ? "&" : "?";
         return url
-                + separator
+                + sep
                 + "bridgeEndpoint=true"
                 + "&throwExceptionOnFailure=true"
                 + "&connectTimeout=" + ep.getConnectTimeoutMs()
                 + "&socketTimeout="  + ep.getSocketTimeoutMs();
-    }
-
-    private static byte[] toBytes(Object value) {
-        if (value instanceof byte[] b)   return b;
-        if (value instanceof String s)   return s.getBytes(StandardCharsets.UTF_8);
-        return value.toString().getBytes(StandardCharsets.UTF_8);
     }
 }

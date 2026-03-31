@@ -94,13 +94,8 @@
             <artifactId>camel-spring-boot-starter</artifactId>
         </dependency>
 
-        <!-- Camel ↔ Spring Integration bridge
-             NOTE: no -starter variant exists in the BOM; use the core jar directly -->
-        <dependency>
-            <groupId>org.apache.camel</groupId>
-            <artifactId>camel-spring-integration</artifactId>
-            <version>${camel.version}</version>
-        </dependency>
+        <!-- Camel ↔ Spring Integration bridge is done via @ServiceActivator +
+             ProducerTemplate (see CamelBridge.java). No extra artifact needed. -->
 
         <!-- Camel HTTP(S) outbound -->
         <dependency>
