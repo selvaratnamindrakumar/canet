@@ -47,7 +47,7 @@ public class FileIntegrationConfig {
             long maxBytes = fileCfg.getMaxFileSizeBytes();
             filter.addFilter(new AbstractFileListFilter<File>() {
                 @Override
-                protected boolean accept(File file) {
+                public boolean accept(File file) {
                     return file.length() <= maxBytes;
                 }
             });
