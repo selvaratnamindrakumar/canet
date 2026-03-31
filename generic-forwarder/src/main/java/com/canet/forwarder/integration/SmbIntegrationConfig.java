@@ -16,7 +16,7 @@ import org.springframework.messaging.MessageChannel;
 
 import com.canet.forwarder.config.ForwarderProperties;
 
-import jcifs.smb.NtlmPasswordAuthenticator;
+import jcifs.DialectVersion;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -40,28 +40,17 @@ public class SmbIntegrationConfig {
 
         SmbSessionFactory factory = new SmbSessionFactory();
 
-        // ── Connection ─────────────────────────────────────────────────────
+        // ── Connection / authentication ────────────────────────────────────
         factory.setHost(smb.getHost());
         factory.setPort(smb.getPort());
         factory.setShareAndDir(smb.getShare() + smb.getDirectory());
+        factory.setDomain(smb.getDomain());
+        factory.setUsername(smb.getUsername());
+        factory.setPassword(smb.getPassword());
 
-        // ── Authentication ─────────────────────────────────────────────────
-        NtlmPasswordAuthenticator auth = new NtlmPasswordAuthenticator(
-                smb.getDomain(),
-                smb.getUsername(),
-                smb.getPassword());
-        factory.setAuthenticator(auth);
-
-        // ── Protocol version ───────────────────────────────────────────────
-        factory.setSmbMinVersion(smb.getMinVersion());
-        factory.setSmbMaxVersion(smb.getMaxVersion());
-
-        // ── DFS ────────────────────────────────────────────────────────────
-        factory.setDfsEnabled(smb.isDfsEnabled());
-
-        // ── Timeouts ───────────────────────────────────────────────────────
-        factory.setSocketTimeout(smb.getSocketTimeoutMs());
-        factory.setResponseTimeout(smb.getResponseTimeoutMs());
+        // ── Protocol version (jcifs.DialectVersion enum) ───────────────────
+        factory.setSmbMinVersion(toDialectVersion(smb.getMinVersion()));
+        factory.setSmbMaxVersion(toDialectVersion(smb.getMaxVersion()));
 
         log.info("SMB session factory: host={}:{}, share={}, dir={}, minVer={}, maxVer={}",
                 smb.getHost(), smb.getPort(), smb.getShare(), smb.getDirectory(),
@@ -106,7 +95,7 @@ public class SmbIntegrationConfig {
                 .get();
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // ── helpers ───────────────────────────────────────────────────────────────
 
     private static File resolveLocalStaging(ForwarderProperties.Smb smb) {
         String path = smb.getLocalStagingDirectory();
@@ -114,5 +103,28 @@ public class SmbIntegrationConfig {
             path = System.getProperty("java.io.tmpdir") + "/smb-staging";
         }
         return new File(path);
+    }
+
+    /**
+     * Maps a human-readable version string from application.properties to the
+     * {@link DialectVersion} enum expected by the JCIFS-NG library.
+     *
+     * Supported values: SMB1, SMB2 (→ SMB210), SMB202, SMB210,
+     *                   SMB3 (→ SMB300), SMB300, SMB302, SMB311
+     */
+    static DialectVersion toDialectVersion(String version) {
+        if (version == null) return DialectVersion.SMB210;
+        return switch (version.toUpperCase().trim()) {
+            case "SMB1"              -> DialectVersion.SMB1;
+            case "SMB202"            -> DialectVersion.SMB202;
+            case "SMB2", "SMB210"    -> DialectVersion.SMB210;
+            case "SMB3", "SMB300"    -> DialectVersion.SMB300;
+            case "SMB302"            -> DialectVersion.SMB302;
+            case "SMB311"            -> DialectVersion.SMB311;
+            default -> {
+                log.warn("Unknown SMB dialect version '{}', defaulting to SMB210", version);
+                yield DialectVersion.SMB210;
+            }
+        };
     }
 }

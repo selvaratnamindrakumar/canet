@@ -138,9 +138,6 @@ public class ForwarderProperties {
         // ── Connection timeouts ───────────────────────────────
         /** TCP connection timeout in ms (0 = infinite) */
         private int connectionTimeoutMs = 10_000;
-        /** Handshake / AMQP open timeout in ms */
-        private int handshakeTimeoutMs = 10_000;
-
         // ── Consumer concurrency ──────────────────────────────
         /** Prefetch (QoS): max unacknowledged messages per consumer */
         private int prefetchCount = 10;
@@ -179,15 +176,6 @@ public class ForwarderProperties {
         private String minVersion = "SMB2";
         /** Maximum SMB protocol version: SMB1 | SMB2 | SMB3 */
         private String maxVersion = "SMB3";
-        /** Enable Distributed File System (DFS) support */
-        private boolean dfsEnabled = false;
-
-        // ── Timeouts ──────────────────────────────────────────
-        /** Socket connect timeout in ms */
-        private int socketTimeoutMs = 10_000;
-        /** Socket read/write (response) timeout in ms */
-        private int responseTimeoutMs = 30_000;
-
         // ── Polling / file handling ───────────────────────────
         /** Ant-style pattern applied on remote file names */
         private String filePattern = "*.*";

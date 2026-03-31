@@ -8,10 +8,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.integration.dsl.IntegrationFlow;
 import org.springframework.integration.dsl.Pollers;
 import org.springframework.integration.file.FileReadingMessageSource;
+import org.springframework.integration.file.filters.AbstractFileListFilter;
 import org.springframework.integration.file.filters.AcceptOnceFileListFilter;
 import org.springframework.integration.file.filters.CompositeFileListFilter;
 import org.springframework.integration.file.filters.RegexPatternFileListFilter;
-import org.springframework.integration.file.filters.SimplePatternFileListFilter;
 import org.springframework.messaging.MessageChannel;
 
 import com.canet.forwarder.config.ForwarderProperties;
@@ -44,7 +44,13 @@ public class FileIntegrationConfig {
 
         // Optional: skip files that exceed the configured size limit
         if (fileCfg.getMaxFileSizeBytes() > 0) {
-            filter.addFilter(f -> f.length() <= fileCfg.getMaxFileSizeBytes());
+            long maxBytes = fileCfg.getMaxFileSizeBytes();
+            filter.addFilter(new AbstractFileListFilter<File>() {
+                @Override
+                protected boolean accept(File file) {
+                    return file.length() <= maxBytes;
+                }
+            });
         }
 
         FileReadingMessageSource source = new FileReadingMessageSource();

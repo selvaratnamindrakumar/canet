@@ -44,7 +44,6 @@ public class RabbitMqIntegrationConfig {
 
         // ── Timeouts ───────────────────────────────────────────────────────
         factoryBean.setConnectionTimeout(rabbit.getConnectionTimeoutMs());
-        factoryBean.setHandshakeTimeout(rabbit.getHandshakeTimeoutMs());
 
         // ── Keep-alive / heartbeat ─────────────────────────────────────────
         factoryBean.setRequestedHeartbeat(rabbit.getRequestedHeartbeat());
