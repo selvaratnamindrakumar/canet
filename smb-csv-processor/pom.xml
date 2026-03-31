@@ -48,7 +48,20 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- Import Camel BOM so individual camel artifacts do not need versions -->
+            <!--
+                Import BOTH Camel BOMs.
+                camel-bom        pins org.apache.camel:*          (core components)
+                camel-spring-boot-bom pins org.apache.camel.springboot:* (starters)
+                Both must be at the same version to prevent class-not-found errors
+                such as NoClassDefFoundError: EndpointServiceLocation (added in 3.18).
+            -->
+            <dependency>
+                <groupId>org.apache.camel</groupId>
+                <artifactId>camel-bom</artifactId>
+                <version>${camel.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>org.apache.camel.springboot</groupId>
                 <artifactId>camel-spring-boot-bom</artifactId>
@@ -83,16 +96,34 @@
 
         <!-- ============================================================
              Apache Camel — file routing, SFTP upload
+             Versions are explicit here to prevent transitive resolution
+             pulling in a newer Camel JAR that references missing classes
+             (e.g. EndpointServiceLocation, added in 3.18).
              ============================================================ -->
         <dependency>
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-spring-boot-starter</artifactId>
+            <version>${camel.version}</version>
         </dependency>
 
         <!-- camel-ftp brings both FTP (commons-net) and SFTP (JSch) support -->
         <dependency>
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-ftp-starter</artifactId>
+            <version>${camel.version}</version>
+        </dependency>
+
+        <!-- Pin core Camel API explicitly — ensures no newer camel-api JAR
+             (e.g. from a transitive dep) slips onto the classpath -->
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-api</artifactId>
+            <version>${camel.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-core</artifactId>
+            <version>${camel.version}</version>
         </dependency>
 
         <!-- JSch: required by camel-ftp for sftp:// endpoints.
@@ -152,6 +183,7 @@
         <dependency>
             <groupId>org.apache.camel</groupId>
             <artifactId>camel-test-spring-junit5</artifactId>
+            <version>${camel.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
