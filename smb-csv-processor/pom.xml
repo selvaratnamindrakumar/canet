@@ -6,18 +6,17 @@
     <modelVersion>4.0.0</modelVersion>
 
     <!--
-        Spring Boot 2.7.18 (last 2.7.x release — Java 8 compatible, widely mirrored,
-        suitable for air-gapped / secure environments).
-        Apache Camel 3.14.10 LTS — the last long-term-support release of Camel 3.x.
-        JCIFS-NG 2.1.3 — the maintained JCIFS fork; supports SMB2/SMB3 + NTLMv2.
-        Note: spring-integration-smb is available in the core from Spring Integration 6.x
-        (Spring Boot 3.x). For Spring Boot 2.7.x we wrap jcifs-ng with Spring's
-        @InboundChannelAdapter / MessageSource pattern directly (no extensions needed).
+        Spring Boot 3.5.3  — requires Java 17+
+        Apache Camel 4.18.0 — matches versions available in the offline repository
+        JCIFS-NG 2.1.3      — SMB2/SMB3 + NTLMv2
+        NOTE: No BOM imports in <dependencyManagement> because the offline
+        environment only mirrors specific JARs, not the camel-bom/camel-spring-boot-bom
+        POM artifacts.  Every version is therefore declared explicitly.
     -->
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>2.7.18</version>
+        <version>3.5.3</version>
         <relativePath/>
     </parent>
 
@@ -35,42 +34,20 @@
     </description>
 
     <properties>
-        <java.version>11</java.version>
-        <!-- Camel 3.14.x is the last 3.x LTS — safe for restricted environments -->
-        <camel.version>3.14.10</camel.version>
-        <!-- jcifs-ng: SMB2/SMB3 capable, replaces the legacy jcifs 1.x -->
+        <!-- Spring Boot 3.x minimum is Java 17 -->
+        <java.version>17</java.version>
+        <camel.version>4.18.0</camel.version>
         <jcifs-ng.version>2.1.3</jcifs-ng.version>
         <commons-compress.version>1.21</commons-compress.version>
         <commons-csv.version>1.9.0</commons-csv.version>
-        <!-- JSch 0.1.55 — included transitively via camel-ftp but pinned for clarity -->
-        <jsch.version>0.1.55</jsch.version>
     </properties>
 
-    <dependencyManagement>
-        <dependencies>
-            <!--
-                Import BOTH Camel BOMs.
-                camel-bom        pins org.apache.camel:*          (core components)
-                camel-spring-boot-bom pins org.apache.camel.springboot:* (starters)
-                Both must be at the same version to prevent class-not-found errors
-                such as NoClassDefFoundError: EndpointServiceLocation (added in 3.18).
-            -->
-            <dependency>
-                <groupId>org.apache.camel</groupId>
-                <artifactId>camel-bom</artifactId>
-                <version>${camel.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.camel.springboot</groupId>
-                <artifactId>camel-spring-boot-bom</artifactId>
-                <version>${camel.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
+    <!--
+        No <dependencyManagement> BOM imports.
+        The offline repository does not carry camel-bom or camel-spring-boot-bom
+        POM artifacts, so Maven would fail with "could not find artifact …:…:pom".
+        All versions are pinned explicitly in <dependencies> instead.
+    -->
 
     <dependencies>
         <!-- ============================================================
@@ -79,26 +56,28 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
+            <version>3.5.3</version>
         </dependency>
 
-        <!-- Spring Integration: channels, @InboundChannelAdapter, @ServiceActivator -->
+        <!-- Spring Integration: @EnableIntegration, channels -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-integration</artifactId>
+            <version>3.5.3</version>
         </dependency>
 
-        <!-- Configuration-processor generates IDE metadata for @ConfigurationProperties -->
+        <!-- IDE metadata for @ConfigurationProperties -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-configuration-processor</artifactId>
+            <version>3.5.3</version>
             <optional>true</optional>
         </dependency>
 
         <!-- ============================================================
-             Apache Camel — file routing, SFTP upload
-             Versions are explicit here to prevent transitive resolution
-             pulling in a newer Camel JAR that references missing classes
-             (e.g. EndpointServiceLocation, added in 3.18).
+             Apache Camel 4.x — file routing, SFTP upload
+             Camel 4.x requires Spring Boot 3.x (Jakarta EE 9+).
+             Versions are explicit — no BOM available offline.
              ============================================================ -->
         <dependency>
             <groupId>org.apache.camel.springboot</groupId>
@@ -106,33 +85,13 @@
             <version>${camel.version}</version>
         </dependency>
 
-        <!-- camel-ftp brings both FTP (commons-net) and SFTP (JSch) support -->
+        <!-- camel-ftp: FTP (commons-net) + SFTP (Apache MINA SSHD).
+             NOTE: Camel 4.x replaced JSch with MINA SSHD — do NOT add
+             com.jcraft:jsch; it is no longer used for SFTP. -->
         <dependency>
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-ftp-starter</artifactId>
             <version>${camel.version}</version>
-        </dependency>
-
-        <!-- Pin core Camel API explicitly — ensures no newer camel-api JAR
-             (e.g. from a transitive dep) slips onto the classpath -->
-        <dependency>
-            <groupId>org.apache.camel</groupId>
-            <artifactId>camel-api</artifactId>
-            <version>${camel.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.camel</groupId>
-            <artifactId>camel-core</artifactId>
-            <version>${camel.version}</version>
-        </dependency>
-
-        <!-- JSch: required by camel-ftp for sftp:// endpoints.
-             Declared explicitly because transitive resolution often fails in
-             secure / air-gapped environments. -->
-        <dependency>
-            <groupId>com.jcraft</groupId>
-            <artifactId>jsch</artifactId>
-            <version>${jsch.version}</version>
         </dependency>
 
         <!-- ============================================================
@@ -163,13 +122,14 @@
         </dependency>
 
         <!-- ============================================================
-             YAML — SnakeYAML (already on classpath via spring-boot but
-             declared explicitly to document the dependency)
+             YAML — SnakeYAML
+             Spring Boot 3.5.3 manages snakeyaml; declared here so the
+             version is visible in dependency reports.
              ============================================================ -->
         <dependency>
             <groupId>org.yaml</groupId>
             <artifactId>snakeyaml</artifactId>
-            <!-- version managed by spring-boot-starter-parent -->
+            <!-- version managed by spring-boot-starter-parent 3.5.3 -->
         </dependency>
 
         <!-- ============================================================
@@ -178,6 +138,7 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <version>3.5.3</version>
             <scope>test</scope>
         </dependency>
         <dependency>
