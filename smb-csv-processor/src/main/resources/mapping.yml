@@ -3,26 +3,39 @@
 # IE/AA Export Format: all headers and values are quoted uppercase
 #   e.g.  "MCC","MNC","LAC","CELL_ID",...
 #
-# outputFormat: QUOTED_UPPERCASE  →  IE/AA export spec
+# outputFormat: QUOTED_UPPERCASE  →  IE/AA export spec (default)
 #               STANDARD          →  plain CSV
 #
 # Field keys:
 #   sourceColumnName   - header in the source CSV (case-insensitive match)
-#   sourceColumnIndex  - zero-based fallback index when hasHeader=false
-#   targetColumnName   - output column header (will be upper-cased + quoted)
-#   inputFields        - list of source columns for multi-input formula fields
-#   formula            - named formula: calculateTac | deriveEci | deriveNodebId |
-#                        deriveCvMbx | derivePci | deriveLatitude | deriveLongitude
+#   targetColumnName   - output column header (upper-cased + quoted in IE/AA format)
+#   inputFields        - source columns fed into a formula (multi-input fields)
+#   formula            - calculateNodebId | calculateTac | calculateIpAddress |
+#                        calculatePci | calculateCbMhz | deriveEci |
+#                        deriveLatitude | deriveLongitude
 #   expectedType       - STRING | INTEGER | DECIMAL | BOOLEAN
-#   nullable           - true = field may be empty; false = empty → quarantine
-#   defaultValue       - written when field is empty and nullable=true
+#   nullable           - true = field may be empty; false = empty row → quarantine
 #   transformations    - TRIM | UPPERCASE | LOWERCASE | REMOVE_SPACES |
 #                        NUMERIC_ONLY | REMOVE_NON_PRINTABLE
 #   validation:
-#     range:           - inclusive numeric range  { min: "1", max: "999" }
-#     pattern:         - Java regex (full-string match)
+#     range:           - inclusive numeric range  { min: "x", max: "y" }
+#     pattern:         - Java regex (full-string match via String.matches)
 #     minLength / maxLength
 #     allowedValues:   - exhaustive accepted list
+#
+# Formula fields (generation-aware):
+#   calculateNodebId   → ENODEB_ID:  4G=enodeb_id,        5G=gnodeb_id
+#   calculateTac       → TAC:        4G=4g-tac,            5G=5g_tac
+#   calculateIpAddress → IP_ADDRESS: 4G=4g_enb_ip_address, 5G=5g_gnb_ip_address
+#   calculatePci       → PCI:        4G=4g_pci (0-503),    5G=5g_pci (0-1007)
+#   calculateCbMhz     → CB_MHZ:     4G=4g_cb_mhz,         5G=5g_cb_mhz
+#   deriveEci          → DERIVED_ECI:
+#       4G: eNB_ID × 256 + (cell_id & 0xFF)
+#       5G: gNB_ID × 2^(36 − gNB_ID_length) + cell_id  [BigInteger]
+#   deriveLatitude / deriveLongitude → BNG easting+northing → WGS84
+#
+# NOT MAPPED (present in source, used by formulas, not written to output):
+#   gnodeb_id_lenth, 5g_amf_id
 # =============================================================================
 
 mapping:
@@ -40,7 +53,9 @@ mapping:
   # ---- Field definitions ----------------------------------------------------
   fields:
 
-    # --- Network identity -----------------------------------------------------
+    # ==========================================================================
+    # Network identity
+    # ==========================================================================
 
     - sourceColumnName: "mcc"
       targetColumnName: "MCC"
@@ -90,39 +105,46 @@ mapping:
       validation:
         maxLength: 50
 
-    # --- Grid coordinates -----------------------------------------------------
+    # ==========================================================================
+    # Grid coordinates  (BNG OSGB36 — long integer, 8 digits max)
+    # ==========================================================================
 
     - sourceColumnName: "bng_easting_m"
       targetColumnName: "BNG_EASTING_M"
-      expectedType: DECIMAL
+      expectedType: INTEGER
       nullable: true
       transformations: [TRIM]
       validation:
         range:
           min: "0"
-          max: "800000"
+          max: "99999999"
+        maxLength: 8
 
     - sourceColumnName: "bng_northing_m"
       targetColumnName: "BNG_NORTHING_M"
-      expectedType: DECIMAL
+      expectedType: INTEGER
       nullable: true
       transformations: [TRIM]
       validation:
         range:
           min: "-100000"
-          max: "1400000"
+          max: "99999999"
+        maxLength: 8
 
-    # --- Antenna parameters ---------------------------------------------------
+    # ==========================================================================
+    # Antenna parameters
+    # ==========================================================================
 
     - sourceColumnName: "bearing_deg"
       targetColumnName: "BEARING_DEG"
-      expectedType: DECIMAL
+      expectedType: INTEGER
       nullable: true
       transformations: [TRIM]
       validation:
         range:
           min: "0"
           max: "360"
+        maxLength: 3
 
     - sourceColumnName: "beam_width_deg"
       targetColumnName: "BEAM_WIDTH_DEG"
@@ -132,7 +154,8 @@ mapping:
       validation:
         range:
           min: "0"
-          max: "360"
+          max: "360.00"
+        maxLength: 6
 
     - sourceColumnName: "erp_w"
       targetColumnName: "ERP_W"
@@ -142,7 +165,8 @@ mapping:
       validation:
         range:
           min: "0"
-          max: "100000"
+          max: "999.99"
+        maxLength: 6
 
     - sourceColumnName: "antenna_height_m"
       targetColumnName: "ANTENNA_HEIGHT_M"
@@ -152,19 +176,22 @@ mapping:
       validation:
         range:
           min: "0"
-          max: "500"
+          max: "999.99"
 
     - sourceColumnName: "probable_range_m"
       targetColumnName: "PROBABLE_RANGE_M"
-      expectedType: DECIMAL
+      expectedType: INTEGER
       nullable: true
       transformations: [TRIM]
       validation:
         range:
           min: "0"
-          max: "100000"
+          max: "99999999"
+        maxLength: 8
 
-    # --- Cell generation and technology ---------------------------------------
+    # ==========================================================================
+    # Cell generation and technology
+    # ==========================================================================
 
     - sourceColumnName: "generation"
       targetColumnName: "GENERATION"
@@ -173,6 +200,7 @@ mapping:
       transformations: [TRIM, UPPERCASE]
       validation:
         allowedValues: ["2G", "3G", "4G", "5G"]
+        maxLength: 25
 
     - sourceColumnName: "technology"
       targetColumnName: "TECHNOLOGY"
@@ -181,6 +209,7 @@ mapping:
       transformations: [TRIM, UPPERCASE]
       validation:
         allowedValues: ["GSM", "UMTS", "LTE", "NR", "CDMA", "WCDMA"]
+        maxLength: 50
 
     - sourceColumnName: "switch"
       targetColumnName: "SWITCH"
@@ -196,22 +225,25 @@ mapping:
       nullable: true
       transformations: [TRIM, UPPERCASE]
       validation:
-        maxLength: 50
+        maxLength: 25
 
-    # --- 3G parameters --------------------------------------------------------
+    # ==========================================================================
+    # 3G / UMTS parameters
+    # ==========================================================================
 
     - sourceColumnName: "3g_sac"
-      targetColumnName: "3G_SAC"
+      targetColumnName: "SAC"
       expectedType: INTEGER
       nullable: true
       transformations: [TRIM]
       validation:
         range:
           min: "0"
-          max: "65535"
+          max: "99999"
+        maxLength: 5
 
     - sourceColumnName: "3g_rac"
-      targetColumnName: "3G_RAC"
+      targetColumnName: "RAC"
       expectedType: INTEGER
       nullable: true
       transformations: [TRIM]
@@ -219,9 +251,10 @@ mapping:
         range:
           min: "0"
           max: "255"
+        maxLength: 3
 
     - sourceColumnName: "3g_scram"
-      targetColumnName: "3G_SCRAM"
+      targetColumnName: "SCRAM"
       expectedType: INTEGER
       nullable: true
       transformations: [TRIM]
@@ -229,11 +262,14 @@ mapping:
         range:
           min: "0"
           max: "511"
+        maxLength: 3
 
-    # --- 2G parameters --------------------------------------------------------
+    # ==========================================================================
+    # 2G / GSM parameters
+    # ==========================================================================
 
     - sourceColumnName: "2g_ncc"
-      targetColumnName: "2G_NCC"
+      targetColumnName: "NCC"
       expectedType: INTEGER
       nullable: true
       transformations: [TRIM]
@@ -241,9 +277,10 @@ mapping:
         range:
           min: "0"
           max: "7"
+        maxLength: 1
 
     - sourceColumnName: "2g_bcc"
-      targetColumnName: "2G_BCC"
+      targetColumnName: "BCC"
       expectedType: INTEGER
       nullable: true
       transformations: [TRIM]
@@ -251,9 +288,10 @@ mapping:
         range:
           min: "0"
           max: "7"
+        maxLength: 1
 
     - sourceColumnName: "2g_bcch"
-      targetColumnName: "2G_BCCH"
+      targetColumnName: "BCCH"
       expectedType: INTEGER
       nullable: true
       transformations: [TRIM]
@@ -261,8 +299,11 @@ mapping:
         range:
           min: "0"
           max: "1023"
+        maxLength: 4
 
-    # --- Site information -----------------------------------------------------
+    # ==========================================================================
+    # Site information
+    # ==========================================================================
 
     - sourceColumnName: "site_code"
       targetColumnName: "SITE_CODE"
@@ -271,7 +312,7 @@ mapping:
       transformations: [TRIM, UPPERCASE]
       validation:
         minLength: 1
-        maxLength: 30
+        maxLength: 10
 
     - sourceColumnName: "site_name"
       targetColumnName: "SITE_NAME"
@@ -279,7 +320,7 @@ mapping:
       nullable: true
       transformations: [TRIM, REMOVE_NON_PRINTABLE]
       validation:
-        maxLength: 100
+        maxLength: 150
 
     - sourceColumnName: "site_address"
       targetColumnName: "SITE_ADDRESS"
@@ -287,7 +328,7 @@ mapping:
       nullable: true
       transformations: [TRIM, REMOVE_NON_PRINTABLE]
       validation:
-        maxLength: 200
+        maxLength: 250
 
     - sourceColumnName: "site_postcode"
       targetColumnName: "SITE_POSTCODE"
@@ -295,9 +336,8 @@ mapping:
       nullable: true
       transformations: [TRIM, UPPERCASE, REMOVE_SPACES]
       validation:
-        # UK postcode pattern (outward + inward codes)
         pattern: "[A-Z]{1,2}[0-9][0-9A-Z]?[0-9][A-Z]{2}"
-        maxLength: 8
+        maxLength: 10
 
     - sourceColumnName: "sector_code"
       targetColumnName: "SECTOR_CODE"
@@ -306,42 +346,45 @@ mapping:
       transformations: [TRIM, UPPERCASE]
       validation:
         minLength: 1
-        maxLength: 20
+        maxLength: 5
 
-    # --- 4G / LTE parameters --------------------------------------------------
+    # ==========================================================================
+    # Unified output fields — formula selects 4G or 5G source based on generation
+    # ==========================================================================
 
-    - sourceColumnName: "enodeb_id"
-      targetColumnName: "ENODEB_ID"
+    # ENODEB_ID: 4G=enodeb_id (eNB), 5G=gnodeb_id (gNB)
+    - targetColumnName: "ENODEB_ID"
+      inputFields:
+        - name: "enodeb_id"
+        - name: "gnodeb_id"
+        - name: "generation"
+      formula: calculateNodebId
       expectedType: INTEGER
       nullable: true
-      transformations: [TRIM]
-      validation:
-        range:
-          min: "0"
-          max: "1048575"
 
-    - sourceColumnName: "4g-tac"
-      targetColumnName: "4G_TAC"
+    # TAC: 4G=4g-tac (0-65535), 5G=5g_tac (0-16777215)
+    - targetColumnName: "TAC"
+      inputFields:
+        - name: "4g-tac"
+        - name: "5g_tac"
+        - name: "generation"
+      formula: calculateTac
       expectedType: INTEGER
       nullable: true
-      transformations: [TRIM]
-      validation:
-        range:
-          min: "0"
-          max: "65535"
 
-    - sourceColumnName: "4g_epb_ip_address"
-      targetColumnName: "4G_EPB_IP_ADDRESS"
+    # ENB_IP_ADDRESS: 4G eNB IP (pass-through; empty for 5G cells)
+    - sourceColumnName: "4g_enb_ip_address"
+      targetColumnName: "ENB_IP_ADDRESS"
       expectedType: STRING
       nullable: true
       transformations: [TRIM]
       validation:
-        # IPv4 address pattern
         pattern: "((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)"
         maxLength: 15
 
+    # MME_ID: 4G only
     - sourceColumnName: "4g_mme_id"
-      targetColumnName: "4G_MME_ID"
+      targetColumnName: "MME_ID"
       expectedType: INTEGER
       nullable: true
       transformations: [TRIM]
@@ -349,87 +392,57 @@ mapping:
         range:
           min: "0"
           max: "16777215"
+        maxLength: 8
 
-    - sourceColumnName: "4g_pci"
-      targetColumnName: "4G_PCI"
+    # PCI: 4G=4g_pci (0-503), 5G=5g_pci (0-1007)
+    - targetColumnName: "PCI"
+      inputFields:
+        - name: "4g_pci"
+        - name: "5g_pci"
+        - name: "generation"
+      formula: calculatePci
       expectedType: INTEGER
       nullable: true
-      transformations: [TRIM]
-      validation:
-        range:
-          min: "0"
-          max: "503"
 
-    - sourceColumnName: "4g_cb_mhz"
-      targetColumnName: "4G_CB_MHZ"
+    # CB_MHZ: 4G=4g_cb_mhz, 5G=5g_cb_mhz
+    - targetColumnName: "CB_MHZ"
+      inputFields:
+        - name: "4g_cb_mhz"
+        - name: "5g_cb_mhz"
+        - name: "generation"
+      formula: calculateCbMhz
       expectedType: DECIMAL
       nullable: true
-      transformations: [TRIM]
       validation:
-        allowedValues: ["1.4", "3", "5", "10", "15", "20"]
+        allowedValues: ["1.4", "3", "5", "10", "15", "20", "25", "30", "40", "50", "60", "80", "100", "200", "400"]
 
-    # --- Derived 4G field -----------------------------------------------------
-    # ECI = eNodeB_ID * 256 + cell_index (lower 8 bits of cell_id)
-
+    # DERIVED_ECI:
+    #   4G LTE: eNB_ID × 256 + (cell_id & 0xFF)         [3GPP TS 36.413]
+    #   5G NR:  gNB_ID × 2^(36 − gNB_ID_length) + cell_id  [3GPP TS 38.413]
+    # gnodeb_id_lenth (source typo preserved) read from row context by formula.
     - targetColumnName: "DERIVED_ECI"
       inputFields:
         - name: "enodeb_id"
+        - name: "gnodeb_id"
         - name: "cell_id"
+        - name: "generation"
       formula: deriveEci
       expectedType: INTEGER
       nullable: true
 
-    # --- 5G / NR parameters ---------------------------------------------------
-
-    - sourceColumnName: "gnodeb_id"
-      targetColumnName: "GNODEB_ID"
-      expectedType: INTEGER
-      nullable: true
-      transformations: [TRIM]
-      validation:
-        range:
-          min: "0"
-          max: "4194303"
-
-    - sourceColumnName: "gnodeb_id_lenth"
-      targetColumnName: "GNODEB_ID_LENGTH"
-      expectedType: INTEGER
-      nullable: true
-      transformations: [TRIM]
-      validation:
-        # gNB ID length in bits: 22–32 per 3GPP TS 38.413
-        range:
-          min: "22"
-          max: "32"
-
-    - sourceColumnName: "5g_tac"
-      targetColumnName: "5G_TAC"
-      expectedType: INTEGER
-      nullable: true
-      transformations: [TRIM]
-      validation:
-        range:
-          min: "0"
-          max: "16777215"
-
+    # GNB_IP_ADDRESS: 5G gNB IP (pass-through; empty for 4G cells)
     - sourceColumnName: "5g_gnb_ip_address"
-      targetColumnName: "5G_GNB_IP_ADDRESS"
+      targetColumnName: "GNB_IP_ADDRESS"
       expectedType: STRING
       nullable: true
       transformations: [TRIM]
       validation:
         maxLength: 45
 
-    - sourceColumnName: "5g_cb_mhz"
-      targetColumnName: "5G_CB_MHZ"
-      expectedType: DECIMAL
-      nullable: true
-      transformations: [TRIM]
-      validation:
-        allowedValues: ["5", "10", "15", "20", "25", "30", "40", "50", "60", "80", "100", "200", "400"]
-
-    # --- Derived coordinates --------------------------------------------------
-    # BNG (OSGB36) easting + northing → WGS84 lat/lon via Helmert transformation
+    # ==========================================================================
+    # Derived coordinates — BNG (OSGB36) easting+northing → WGS84
+    # bng_easting_m and bng_northing_m are read from row context by the formula.
+    # ==========================================================================
 
     - targetColumnName: "DERIVE_LATITUDE"
       inputFields:

@@ -5,24 +5,30 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigInteger;
 import java.util.Map;
 
 /**
  * Evaluates named formulas against the full row context map.
  *
- * <p>Each formula receives the entire row as a {@code Map<String, String>} keyed by
- * source column name (lower-cased).  The formula returns the derived string value
- * for the target column, or {@code null} on error.
+ * <p>Each formula receives the entire row as a {@code Map<String, String>} keyed
+ * by lower-cased source column name.  The formula returns the derived string value
+ * for the target column, or {@code null} when inputs are missing/invalid.
+ *
+ * <p>All generation-dependent formulas check {@code generation} (case-insensitive)
+ * and route to the 5G path when it contains "5G", otherwise the 4G/legacy path.
  *
  * <p>Supported formulas:
  * <ul>
- *   <li>{@code calculateTac} — returns 5g_tac when generation is 5G, otherwise 4g-tac</li>
- *   <li>{@code deriveEci} — Extended Cell Identity = enodeb_id * 256 + cell_id (LTE)</li>
- *   <li>{@code deriveNodebId} — Node B ID = cell_id / 16 (UMTS/3G derivation)</li>
- *   <li>{@code deriveCvMbx} — Constructs carrier/voice MBX identifier from site and sector</li>
- *   <li>{@code derivePci} — Physical Cell ID = validated pass-through of 4g_pci</li>
- *   <li>{@code deriveLatitude} — WGS84 latitude from BNG easting + northing</li>
- *   <li>{@code deriveLongitude} — WGS84 longitude from BNG easting + northing</li>
+ *   <li>{@code calculateNodebId}  — ENODEB_ID: 4G→enodeb_id, 5G→gnodeb_id</li>
+ *   <li>{@code calculateTac}      — TAC: 4G→4g-tac, 5G→5g_tac</li>
+ *   <li>{@code calculateIpAddress}— IP address: 4G→4g_enb_ip_address, 5G→5g_gnb_ip_address</li>
+ *   <li>{@code calculatePci}      — PCI: 4G→4g_pci (0-503), 5G→5g_pci (0-1007)</li>
+ *   <li>{@code calculateCbMhz}    — channel bandwidth: 4G→4g_cb_mhz, 5G→5g_cb_mhz</li>
+ *   <li>{@code deriveEci}         — 4G: eNB_ID×256 + cell_index;
+ *                                   5G: gNB_ID × 2^(36−gNB_ID_length) + cell_id (BigInteger)</li>
+ *   <li>{@code deriveLatitude}    — WGS84 lat from BNG easting + northing</li>
+ *   <li>{@code deriveLongitude}   — WGS84 lon from BNG easting + northing</li>
  * </ul>
  */
 @Service
@@ -30,26 +36,34 @@ public class FormulaService {
 
     private static final Logger log = LoggerFactory.getLogger(FormulaService.class);
 
+    /** Default gNB-ID bit-length used when gnodeb_id_lenth column is absent/empty. */
+    private static final int DEFAULT_GNB_ID_LENGTH = 22;
+
     @Autowired
     private BngConverter bngConverter;
+
+    // -------------------------------------------------------------------------
+    // Dispatch
+    // -------------------------------------------------------------------------
 
     /**
      * Evaluates a named formula against the given row context.
      *
-     * @param formula  the formula name (case-insensitive)
-     * @param row      complete row values keyed by lower-cased source column name
+     * @param formula formula name (case-insensitive)
+     * @param row     complete row values keyed by lower-cased source column name
      * @return computed string value, or {@code null} if the formula cannot produce a result
      */
     public String evaluate(String formula, Map<String, String> row) {
         if (formula == null) return null;
         switch (formula.toLowerCase()) {
-            case "calculatetac":    return calculateTac(row);
-            case "deriveeci":       return deriveEci(row);
-            case "derivenodebid":   return deriveNodebId(row);
-            case "derivecvmbx":     return deriveCvMbx(row);
-            case "derivepci":       return derivePci(row);
-            case "derivelatitude":  return deriveLatitude(row);
-            case "derivelongitude": return deriveLongitude(row);
+            case "calculatenodebid":   return calculateNodebId(row);
+            case "calculatetac":       return calculateTac(row);
+            case "calculateipaddress": return calculateIpAddress(row);
+            case "calculatepci":       return calculatePci(row);
+            case "calculatecbmhz":     return calculateCbMhz(row);
+            case "deriveeci":          return deriveEci(row);
+            case "derivelatitude":     return deriveLatitude(row);
+            case "derivelongitude":    return deriveLongitude(row);
             default:
                 log.warn("Unknown formula '{}' — returning null", formula);
                 return null;
@@ -61,36 +75,144 @@ public class FormulaService {
     // -------------------------------------------------------------------------
 
     /**
-     * Returns the TAC (Tracking Area Code) appropriate for the cell generation.
-     *
+     * Returns the node/base-station identifier for the output ENODEB_ID column.
      * <ul>
-     *   <li>If {@code generation} contains "5G" (case-insensitive) → return {@code 5g_tac}</li>
-     *   <li>Otherwise → return {@code 4g-tac}</li>
+     *   <li>4G/LTE → {@code enodeb_id}</li>
+     *   <li>5G/NR  → {@code gnodeb_id}</li>
      * </ul>
      */
-    private String calculateTac(Map<String, String> row) {
-        String generation = row.getOrDefault("generation", "").trim().toUpperCase();
-        if (generation.contains("5G")) {
-            return row.getOrDefault("5g_tac", "");
+    private String calculateNodebId(Map<String, String> row) {
+        if (is5G(row)) {
+            return trimOrNull(row, "gnodeb_id");
         }
-        return row.getOrDefault("4g-tac", row.getOrDefault("4g_tac", ""));
+        return trimOrNull(row, "enodeb_id");
     }
 
     /**
-     * Derives the LTE Extended Cell Identity (ECI).
+     * Returns the Tracking Area Code (TAC) for the output TAC column.
+     * <ul>
+     *   <li>5G/NR  → {@code 5g_tac}</li>
+     *   <li>4G/LTE → {@code 4g-tac}</li>
+     * </ul>
+     */
+    private String calculateTac(Map<String, String> row) {
+        if (is5G(row)) {
+            return trimOrNull(row, "5g_tac");
+        }
+        return trimOrNull(row, "4g-tac");
+    }
+
+    /**
+     * Returns the IP address of the base station controller.
+     * <ul>
+     *   <li>5G/NR  → {@code 5g_gnb_ip_address}</li>
+     *   <li>4G/LTE → {@code 4g_enb_ip_address}</li>
+     * </ul>
+     */
+    private String calculateIpAddress(Map<String, String> row) {
+        if (is5G(row)) {
+            return trimOrNull(row, "5g_gnb_ip_address");
+        }
+        return trimOrNull(row, "4g_enb_ip_address");
+    }
+
+    /**
+     * Returns the Physical Cell ID (PCI) for the output PCI column.
+     * <ul>
+     *   <li>5G/NR  → {@code 5g_pci} (valid range 0–1007)</li>
+     *   <li>4G/LTE → {@code 4g_pci} (valid range 0–503)</li>
+     * </ul>
+     */
+    private String calculatePci(Map<String, String> row) {
+        String pci = is5G(row)
+                ? row.getOrDefault("5g_pci", "").trim()
+                : row.getOrDefault("4g_pci", "").trim();
+
+        if (pci.isEmpty()) return null;
+        try {
+            int val = Integer.parseInt(pci);
+            int maxPci = is5G(row) ? 1007 : 503;
+            if (val < 0 || val > maxPci) {
+                log.warn("PCI value {} out of range 0–{}", val, maxPci);
+                return null;
+            }
+            return String.valueOf(val);
+        } catch (NumberFormatException e) {
+            log.debug("calculatePci: non-numeric PCI value '{}'", pci);
+            return null;
+        }
+    }
+
+    /**
+     * Returns the channel bandwidth (MHz) for the output CB_MHZ column.
+     * <ul>
+     *   <li>5G/NR  → {@code 5g_cb_mhz}</li>
+     *   <li>4G/LTE → {@code 4g_cb_mhz}</li>
+     * </ul>
+     */
+    private String calculateCbMhz(Map<String, String> row) {
+        if (is5G(row)) {
+            return trimOrNull(row, "5g_cb_mhz");
+        }
+        return trimOrNull(row, "4g_cb_mhz");
+    }
+
+    /**
+     * Derives the Extended/NR Cell Identity (ECI / NCI).
      *
-     * <p>Formula: {@code ECI = eNodeB_ID * 256 + cell_index}
+     * <p><b>4G LTE</b> (3GPP TS 36.413):
+     * <pre>  ECI = eNB_ID × 256 + cell_index
+     *  cell_index = lower 8 bits of cell_id</pre>
      *
-     * <p>The cell_index (0–255) is taken from the lower 8 bits of {@code cell_id}.
-     * For 4G LTE: ECI is a 28-bit identifier = eNB_ID (20 bits) * 256 + cell_index (8 bits).
+     * <p><b>5G NR</b> (3GPP TS 38.413):
+     * <pre>  NCI = gNB_ID × 2^(36 − gNB_ID_length) + cell_id</pre>
+     * {@code gNB_ID_length} defaults to {@value #DEFAULT_GNB_ID_LENGTH} if absent.
+     * BigInteger is used to handle the full 36-bit NCI range safely.
      */
     private String deriveEci(Map<String, String> row) {
         try {
-            long enodebId = parseLong(row, "enodeb_id");
-            long cellId   = parseLong(row, "cell_id");
-            long cellIndex = cellId & 0xFF;  // lower 8 bits
-            long eci = enodebId * 256L + cellIndex;
-            return String.valueOf(eci);
+            String cellIdStr = row.getOrDefault("cell_id", "").trim();
+            if (cellIdStr.isEmpty()) {
+                log.debug("deriveEci: cell_id is empty");
+                return null;
+            }
+            BigInteger cellId = new BigInteger(cellIdStr);
+
+            if (is5G(row)) {
+                // 5G NR: NCI = gNB_ID * 2^(36 - gNB_ID_length) + cell_id
+                String gnbStr = row.getOrDefault("gnodeb_id", "").trim();
+                if (gnbStr.isEmpty()) {
+                    log.debug("deriveEci: gnodeb_id is empty for 5G row");
+                    return null;
+                }
+                BigInteger gnodebId = new BigInteger(gnbStr);
+
+                String lenStr = row.getOrDefault("gnodeb_id_lenth", "").trim(); // source typo preserved
+                int gnbIdLength = lenStr.isEmpty()
+                        ? DEFAULT_GNB_ID_LENGTH
+                        : Integer.parseInt(lenStr);
+
+                // Validate length range per 3GPP TS 38.413 (22–32 bits)
+                if (gnbIdLength < 22 || gnbIdLength > 32) {
+                    log.warn("deriveEci: gnodeb_id_length {} out of range 22–32, using default {}",
+                            gnbIdLength, DEFAULT_GNB_ID_LENGTH);
+                    gnbIdLength = DEFAULT_GNB_ID_LENGTH;
+                }
+
+                BigInteger shift = BigInteger.valueOf(1L << (36 - gnbIdLength));
+                return gnodebId.multiply(shift).add(cellId).toString();
+
+            } else {
+                // 4G LTE: ECI = eNB_ID * 256 + cell_index (lower 8 bits of cell_id)
+                String enbStr = row.getOrDefault("enodeb_id", "").trim();
+                if (enbStr.isEmpty()) {
+                    log.debug("deriveEci: enodeb_id is empty for 4G row");
+                    return null;
+                }
+                BigInteger enodebId = new BigInteger(enbStr);
+                BigInteger cellIndex = cellId.and(BigInteger.valueOf(0xFF));
+                return enodebId.multiply(BigInteger.valueOf(256)).add(cellIndex).toString();
+            }
         } catch (Exception e) {
             log.debug("deriveEci failed: {}", e.getMessage());
             return null;
@@ -98,87 +220,8 @@ public class FormulaService {
     }
 
     /**
-     * Derives the UMTS Node B identifier from the WCDMA cell ID.
-     *
-     * <p>Formula: {@code NodeB_ID = cell_id / 16} (standard WCDMA cell_id encoding).
-     * If {@code gnodeb_id} is present it is returned directly (5G NR gNodeB ID takes precedence).
-     */
-    private String deriveNodebId(Map<String, String> row) {
-        // Prefer explicit gnodeb_id
-        String gnbId = row.getOrDefault("gnodeb_id", "").trim();
-        if (!gnbId.isEmpty()) return gnbId;
-
-        try {
-            long cellId  = parseLong(row, "cell_id");
-            long nodebId = cellId / 16L;   // WCDMA: cell_id = NodeB_ID * 16 + cell_index
-            return String.valueOf(nodebId);
-        } catch (Exception e) {
-            log.debug("deriveNodebId failed: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Derives a CV-MBX (Carrier Voice Mobile Broadband eXchange) identifier.
-     *
-     * <p>Format: {@code <site_code>-<sector_code>-<carrier_band>}
-     * where carrier band is inferred from the CB (channel bandwidth) field for the active
-     * generation, or "UNKNOWN" if unavailable.
-     */
-    private String deriveCvMbx(Map<String, String> row) {
-        String siteCode   = row.getOrDefault("site_code", "").trim();
-        String sectorCode = row.getOrDefault("sector_code", "").trim();
-        String generation = row.getOrDefault("generation", "").trim().toUpperCase();
-
-        String cbMhz;
-        if (generation.contains("5G")) {
-            cbMhz = row.getOrDefault("5g_cb_mhz", "").trim();
-        } else if (generation.contains("4G") || generation.contains("LTE")) {
-            cbMhz = row.getOrDefault("4g_cb_mhz", "").trim();
-        } else {
-            cbMhz = "";
-        }
-
-        String band = cbMhz.isEmpty() ? "UNKNOWN" : cbMhz + "MHz";
-        return siteCode + "-" + sectorCode + "-" + band;
-    }
-
-    /**
-     * Returns the Physical Cell ID (PCI).
-     *
-     * <p>For 4G/LTE the PCI is in range 0–503: PCI = 3 * PSS_ID + SSS_ID.
-     * Here we validate and return the {@code 4g_pci} field directly; if the cell
-     * is 5G, the 5G NR PCI (same range 0–1007) would come from a 5G-specific column.
-     */
-    private String derivePci(Map<String, String> row) {
-        String generation = row.getOrDefault("generation", "").trim().toUpperCase();
-        String pci;
-        if (generation.contains("5G")) {
-            // 5G NR PCI range: 0–1007
-            pci = row.getOrDefault("5g_pci", row.getOrDefault("4g_pci", "")).trim();
-        } else {
-            pci = row.getOrDefault("4g_pci", "").trim();
-        }
-
-        if (pci.isEmpty()) return null;
-        try {
-            int pciVal = Integer.parseInt(pci);
-            if (pciVal < 0 || pciVal > 1007) {
-                log.warn("PCI value {} out of range 0–1007", pciVal);
-                return null;
-            }
-            return String.valueOf(pciVal);
-        } catch (NumberFormatException e) {
-            log.debug("derivePci: invalid PCI value '{}'", pci);
-            return null;
-        }
-    }
-
-    /**
-     * Derives WGS84 latitude from BNG (OSGB36) easting and northing values.
-     *
-     * <p>Uses the Ordnance Survey 7-parameter Helmert transformation.
-     * Returns latitude to 7 decimal places (approximately 1 cm precision).
+     * Derives WGS84 latitude from BNG (OSGB36) easting and northing.
+     * Returns latitude to 7 decimal places (~1 cm precision).
      */
     private String deriveLatitude(Map<String, String> row) {
         try {
@@ -194,10 +237,7 @@ public class FormulaService {
     }
 
     /**
-     * Derives WGS84 longitude from BNG (OSGB36) easting and northing values.
-     *
-     * <p>Uses the Ordnance Survey 7-parameter Helmert transformation.
-     * Returns longitude to 7 decimal places.
+     * Derives WGS84 longitude from BNG (OSGB36) easting and northing.
      */
     private String deriveLongitude(Map<String, String> row) {
         try {
@@ -216,15 +256,19 @@ public class FormulaService {
     // Helpers
     // -------------------------------------------------------------------------
 
-    private long parseLong(Map<String, String> row, String key) {
+    /** Returns {@code true} when the row's generation field contains "5G". */
+    private boolean is5G(Map<String, String> row) {
+        return row.getOrDefault("generation", "").trim().toUpperCase().contains("5G");
+    }
+
+    private String trimOrNull(Map<String, String> row, String key) {
         String val = row.getOrDefault(key, "").trim();
-        if (val.isEmpty()) throw new IllegalArgumentException("Missing value for key: " + key);
-        return Long.parseLong(val);
+        return val.isEmpty() ? null : val;
     }
 
     private double parseDouble(Map<String, String> row, String key) {
         String val = row.getOrDefault(key, "").trim();
-        if (val.isEmpty()) throw new IllegalArgumentException("Missing value for key: " + key);
+        if (val.isEmpty()) throw new IllegalArgumentException("Missing value for: " + key);
         return Double.parseDouble(val);
     }
 }
