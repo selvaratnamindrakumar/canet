@@ -95,6 +95,15 @@
             <artifactId>camel-ftp-starter</artifactId>
         </dependency>
 
+        <!-- JSch: required by camel-ftp for sftp:// endpoints.
+             Declared explicitly because transitive resolution often fails in
+             secure / air-gapped environments. -->
+        <dependency>
+            <groupId>com.jcraft</groupId>
+            <artifactId>jsch</artifactId>
+            <version>${jsch.version}</version>
+        </dependency>
+
         <!-- ============================================================
              SMB connectivity — jcifs-ng (SMB2 / SMB3 / NTLMv2)
              ============================================================ -->

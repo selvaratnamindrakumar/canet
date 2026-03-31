@@ -63,16 +63,21 @@ public class SftpUploadRoute extends RouteBuilder {
                 .append("&binary=true")
                 .append("&connectTimeout=").append(sftpProperties.getConnectTimeoutMs());
 
-        if (sftpProperties.getPrivateKeyPath() != null
-                && !sftpProperties.getPrivateKeyPath().isBlank()) {
+        boolean useKeyAuth = sftpProperties.getPrivateKeyPath() != null
+                && !sftpProperties.getPrivateKeyPath().isBlank();
+
+        if (useKeyAuth) {
             uri.append("&privateKeyFile=").append(sftpProperties.getPrivateKeyPath());
             if (sftpProperties.getPrivateKeyPassphrase() != null
                     && !sftpProperties.getPrivateKeyPassphrase().isBlank()) {
                 uri.append("&privateKeyPassphrase=RAW(")
                    .append(sftpProperties.getPrivateKeyPassphrase()).append(")");
             }
-        } else if (sftpProperties.getPassword() != null) {
-            uri.append("&password=RAW(").append(sftpProperties.getPassword()).append(")");
+            uri.append("&preferredAuthentications=publickey");
+        } else if (sftpProperties.getPassword() != null
+                && !sftpProperties.getPassword().isBlank()) {
+            uri.append("&password=RAW(").append(sftpProperties.getPassword()).append(")")
+               .append("&preferredAuthentications=password");
         }
 
         if (sftpProperties.getKnownHostsFile() != null
