@@ -143,21 +143,32 @@ public class SmbDownloadService {
     }
 
     /**
-     * Downloads {@code remoteFile} to the local inputZip directory only if a file
-     * with the same name does not already exist.
+     * Downloads {@code remoteFile} to the local inputZip directory and deletes it
+     * from the SMB share on success to prevent re-processing on the next poll.
      *
-     * @return local file path, or {@code null} if skipped
+     * <p>A {@code .tmp} suffix is used during transfer and atomically renamed on
+     * completion so the Camel file consumer never sees a partial file.  If a
+     * same-named {@code .tmp} already exists (crash recovery) it is overwritten.
+     *
+     * @return local file path, or {@code null} if skipped (in-progress .tmp present)
      */
     private String downloadIfAbsent(SmbFile remoteFile) throws IOException {
         String fileName = remoteFile.getName();
         File localFinal = new File(directoryProperties.getInputZip(), fileName);
+        File localTmp   = new File(directoryProperties.getInputZip(), fileName + ".tmp");
 
+        // If a completed local copy already exists (e.g. app restarted before Camel
+        // picked it up) skip the download — the file is already queued for extraction
         if (localFinal.exists()) {
-            log.debug("Skipping already-present file: {}", fileName);
+            log.debug("Skipping — local copy already queued: {}", fileName);
             return null;
         }
 
-        File localTmp = new File(directoryProperties.getInputZip(), fileName + ".tmp");
+        // Guard against a concurrent download of the same file (should not occur in
+        // normal single-instance operation but protects against crash-restart races)
+        if (localTmp.exists()) {
+            log.warn("In-progress .tmp found for '{}' — previous download may have crashed; overwriting", fileName);
+        }
         log.info("Downloading '{}' ({} bytes) → {}", fileName, remoteFile.length(), localTmp);
 
         try (InputStream is = new BufferedInputStream(remoteFile.getInputStream(), BUFFER_SIZE);
@@ -179,6 +190,16 @@ public class SmbDownloadService {
         // Atomic rename — Camel file consumer will not see a partial file
         Files.move(localTmp.toPath(), localFinal.toPath(), StandardCopyOption.ATOMIC_MOVE);
         log.info("Download complete: {} ({} bytes)", localFinal.getAbsolutePath(), localFinal.length());
+
+        // Delete the remote file so it is not downloaded again on the next poll
+        try {
+            remoteFile.delete();
+            log.info("Deleted remote file: {}", remoteFile.getPath());
+        } catch (Exception e) {
+            log.warn("Downloaded '{}' successfully but could not delete from SMB share: {}",
+                    fileName, e.getMessage());
+        }
+
         return localFinal.getAbsolutePath();
     }
 
