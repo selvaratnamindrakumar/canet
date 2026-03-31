@@ -6,7 +6,7 @@ package com.example.csvprocessor.model;
  * <p>In mapping.yml a multi-input field looks like:
  * <pre>{@code
  * inputFields:
- *   - name: "4g-tac"
+ *   - name: "4g_tac"
  *   - name: "5g_tac"
  * formula: calculateTac
  * }</pre>

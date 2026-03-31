@@ -21,7 +21,7 @@ import java.util.Map;
  * <p>Supported formulas:
  * <ul>
  *   <li>{@code calculateNodebId}  — ENODEB_ID: 4G→enodeb_id, 5G→gnodeb_id</li>
- *   <li>{@code calculateTac}      — TAC: 4G→4g-tac, 5G→5g_tac</li>
+ *   <li>{@code calculateTac}      — TAC: 4G→4g_tac, 5G→5g_tac</li>
  *   <li>{@code calculateIpAddress}— IP address: 4G→4g_enb_ip_address, 5G→5g_gnb_ip_address</li>
  *   <li>{@code calculatePci}      — PCI: 4G→4g_pci (0-503), 5G→5g_pci (0-1007)</li>
  *   <li>{@code calculateCbMhz}    — channel bandwidth: 4G→4g_cb_mhz, 5G→5g_cb_mhz</li>
@@ -92,14 +92,14 @@ public class FormulaService {
      * Returns the Tracking Area Code (TAC) for the output TAC column.
      * <ul>
      *   <li>5G/NR  → {@code 5g_tac}</li>
-     *   <li>4G/LTE → {@code 4g-tac}</li>
+     *   <li>4G/LTE → {@code 4g_tac}</li>
      * </ul>
      */
     private String calculateTac(Map<String, String> row) {
         if (is5G(row)) {
             return trimOrNull(row, "5g_tac");
         }
-        return trimOrNull(row, "4g-tac");
+        return trimOrNull(row, "4g_tac");
     }
 
     /**

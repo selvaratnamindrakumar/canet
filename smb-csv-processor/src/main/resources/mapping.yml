@@ -25,7 +25,7 @@
 #
 # Formula fields (generation-aware):
 #   calculateNodebId   → ENODEB_ID:  4G=enodeb_id,        5G=gnodeb_id
-#   calculateTac       → TAC:        4G=4g-tac,            5G=5g_tac
+#   calculateTac       → TAC:        4G=4g_tac,            5G=5g_tac
 #   calculateIpAddress → IP_ADDRESS: 4G=4g_enb_ip_address, 5G=5g_gnb_ip_address
 #   calculatePci       → PCI:        4G=4g_pci (0-503),    5G=5g_pci (0-1007)
 #   calculateCbMhz     → CB_MHZ:     4G=4g_cb_mhz,         5G=5g_cb_mhz
@@ -362,10 +362,10 @@ mapping:
       expectedType: INTEGER
       nullable: true
 
-    # TAC: 4G=4g-tac (0-65535), 5G=5g_tac (0-16777215)
+    # TAC: 4G=4g_tac (0-65535), 5G=5g_tac (0-16777215)
     - targetColumnName: "TAC"
       inputFields:
-        - name: "4g-tac"
+        - name: "4g_tac"
         - name: "5g_tac"
         - name: "generation"
       formula: calculateTac

@@ -30,7 +30,7 @@ import java.util.List;
  * <pre>{@code
  * - targetColumnName: "TAC"
  *   inputFields:
- *     - name: "4g-tac"
+ *     - name: "4g_tac"
  *     - name: "5g_tac"
  *   formula: calculateTac
  *   expectedType: INTEGER
