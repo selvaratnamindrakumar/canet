@@ -36,8 +36,9 @@ public class SftpUploadRoute extends RouteBuilder {
                 .redeliveryDelay(10_000)
                 .backOffMultiplier(2)
                 .log(LoggingLevel.ERROR,
-                        "SFTP upload failed for '${file:name}' after retries: ${exception.message}")
-                .handled(true);
+                        "SFTP upload failed for '${file:name}' after retries: ${exception.message}");
+                // NOTE: no handled(true) — let the exception propagate so Camel moves
+                // the file to moveFailed=.uploadError rather than move=.uploaded
 
         from("file:" + directories.getOutputSuccess()
                 + "?include=.*_success_.*\\.csv"
