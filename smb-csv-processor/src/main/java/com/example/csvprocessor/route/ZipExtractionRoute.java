@@ -16,8 +16,8 @@ import java.io.File;
  * <ul>
  *   <li><b>readLock=changed</b> — waits until the file stops growing before
  *       consuming, preventing partial downloads from being processed.</li>
- *   <li><b>move=.done</b> — atomically renames the ZIP to
- *       {@code .done/filename.zip} after successful extraction.</li>
+ *   <li><b>delete=true</b> — deletes the ZIP after successful extraction so it
+ *       does not accumulate in the input directory over time.</li>
  *   <li><b>moveFailed=.error</b> — moves the ZIP to the {@code .error} folder
  *       if extraction fails, so it is not retried in an infinite loop.</li>
  *   <li><b>maxMessagesPerPoll=1</b> — processes one ZIP at a time to keep
@@ -49,7 +49,7 @@ public class ZipExtractionRoute extends RouteBuilder {
                 + "&readLock=changed"
                 + "&readLockCheckInterval=5000"
                 + "&readLockTimeout=3600000"
-                + "&move=.done"
+                + "&delete=true"
                 + "&moveFailed=.error"
                 + "&maxMessagesPerPoll=1"
                 + "&sortBy=file:modified")   // oldest ZIP first

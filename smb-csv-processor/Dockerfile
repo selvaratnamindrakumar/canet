@@ -4,8 +4,13 @@
 # Stage 1 (builder): compiles and packages the fat JAR using Maven
 # Stage 2 (runtime): minimal JRE image with non-root user
 #
-# Build:
-#   docker build -t smb-csv-processor:latest .
+# Build (with version):
+#   docker build --build-arg APP_VERSION=1.2.3 -t smb-csv-processor:1.2.3 .
+#   docker build -t smb-csv-processor:latest .          # version defaults to "dev"
+#
+# Or use the provided build scripts which extract the version from pom.xml:
+#   ./docker-build.sh          (Linux/macOS)
+#   docker-build.bat           (Windows)
 #
 # Run (production):
 #   docker run -d \
@@ -14,15 +19,18 @@
 #     -v /srv/processor/ssh:/opt/app/.ssh:ro \
 #     -e SMB_HOST=myserver \
 #     -e SMB_PASSWORD=secret \
-#     smb-csv-processor:latest
+#     smb-csv-processor:1.2.3
 #
 # Run (test mode — no SMB/SFTP required):
 #   docker run -d \
 #     -v /srv/processor/data:/data/processor \
 #     -v /srv/processor/logs:/var/log/smb-csv-processor \
 #     -e PROCESSING_TEST-MODE_ENABLED=true \
-#     smb-csv-processor:latest
+#     smb-csv-processor:1.2.3
 # =============================================================================
+
+# Version passed in at build time: docker build --build-arg APP_VERSION=1.2.3
+ARG APP_VERSION=dev
 
 # -----------------------------------------------------------------------------
 # Stage 1: Build
@@ -43,6 +51,11 @@ RUN mvn -B -DskipTests package -q
 # Stage 2: Runtime
 # -----------------------------------------------------------------------------
 FROM eclipse-temurin:11-jre-jammy AS runtime
+
+ARG APP_VERSION=dev
+LABEL org.opencontainers.image.title="smb-csv-processor" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.description="SMB → CSV processing pipeline with IE/AA export"
 
 # Create a non-root user for the application
 RUN groupadd --gid 1001 csvproc \

@@ -1,6 +1,7 @@
 package com.example.csvprocessor.service;
 
 import com.example.csvprocessor.config.DirectoryProperties;
+import com.example.csvprocessor.config.OutputProperties;
 import com.example.csvprocessor.model.FieldMapping;
 import com.example.csvprocessor.model.InputFieldRef;
 import com.example.csvprocessor.model.MappingConfiguration;
@@ -72,6 +73,9 @@ public class CsvRowProcessor {
     @Autowired
     private FormulaService formulaService;
 
+    @Autowired
+    private OutputProperties outputProperties;
+
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
@@ -85,13 +89,13 @@ public class CsvRowProcessor {
      */
     public ProcessingResult processFile(File csvFile) throws IOException {
         MappingConfiguration config = mappingConfigService.getConfiguration();
-        String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+        String timestamp = new SimpleDateFormat(outputProperties.getTimestampFormat()).format(new Date());
         String baseName  = stripExtension(csvFile.getName());
 
         File successFile    = new File(directoryProperties.getOutputSuccess(),
-                baseName + "_success_" + timestamp + ".csv");
+                baseName + "_" + outputProperties.getSuccessPrefix() + "_" + timestamp + ".csv");
         File quarantineFile = new File(directoryProperties.getOutputQuarantine(),
-                baseName + "_quarantine_" + timestamp + ".csv");
+                baseName + "_" + outputProperties.getQuarantinePrefix() + "_" + timestamp + ".csv");
 
         new File(directoryProperties.getOutputSuccess()).mkdirs();
         new File(directoryProperties.getOutputQuarantine()).mkdirs();

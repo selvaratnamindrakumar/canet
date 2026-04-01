@@ -20,8 +20,8 @@ import java.io.File;
  *
  * <p>After processing:
  * <ul>
- *   <li>The CSV source file is moved to {@code .done} (success) or {@code .error}
- *       (exception during processing).</li>
+ *   <li>The CSV source file is deleted on success (to prevent accumulation) or moved
+ *       to {@code .error} if an exception occurs during processing.</li>
  *   <li>Success files in {@code outputSuccess} are picked up by
  *       {@link SftpUploadRoute}.</li>
  * </ul>
@@ -52,7 +52,7 @@ public class CsvProcessingRoute extends RouteBuilder {
                 + "&readLock=changed"
                 + "&readLockCheckInterval=5000"
                 + "&readLockTimeout=7200000"   // 2-hour timeout for very large files
-                + "&move=.done"
+                + "&delete=true"
                 + "&moveFailed=.error"
                 + "&maxMessagesPerPoll=1"
                 + "&sortBy=file:modified")
