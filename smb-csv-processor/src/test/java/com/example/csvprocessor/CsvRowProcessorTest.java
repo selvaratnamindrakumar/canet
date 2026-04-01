@@ -1,6 +1,7 @@
 package com.example.csvprocessor;
 
 import com.example.csvprocessor.config.DirectoryProperties;
+import com.example.csvprocessor.config.OutputProperties;
 import com.example.csvprocessor.model.FieldMapping;
 import com.example.csvprocessor.model.InputFieldRef;
 import com.example.csvprocessor.model.MappingConfiguration;
@@ -65,6 +66,8 @@ class CsvRowProcessorTest {
         ReflectionTestUtils.setField(dirs, "outputSuccess",    tempDir.resolve("success").toString());
         ReflectionTestUtils.setField(dirs, "outputQuarantine", tempDir.resolve("quarantine").toString());
         ReflectionTestUtils.setField(processor, "directoryProperties", dirs);
+
+        ReflectionTestUtils.setField(processor, "outputProperties", new OutputProperties());
 
         tempDir.resolve("success").toFile().mkdirs();
         tempDir.resolve("quarantine").toFile().mkdirs();
