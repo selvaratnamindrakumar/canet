@@ -1,0 +1,7 @@
+# Generated keystores and certificates — never commit to source control
+kafka-ssl/
+endpoint-ssl/
+*.p12
+*.crt
+*.csr
+*.pem

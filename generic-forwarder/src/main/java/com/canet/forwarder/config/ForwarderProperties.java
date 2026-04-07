@@ -262,5 +262,11 @@ public class ForwarderProperties {
         private String truststorePath;
         private String truststorePassword;
         private String truststoreType = "JKS";
+        /**
+         * DEV ONLY — skip all certificate and hostname validation.
+         * Never set this in production. Activate via the "dev" Spring profile
+         * or explicitly with endpoint.ssl.dev-trust-all=true.
+         */
+        private boolean devTrustAll = false;
     }
 }

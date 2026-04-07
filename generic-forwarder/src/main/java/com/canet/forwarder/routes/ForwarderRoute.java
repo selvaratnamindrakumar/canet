@@ -2,6 +2,8 @@ package com.canet.forwarder.routes;
 
 import java.io.File;
 
+import javax.net.ssl.HostnameVerifier;
+
 import org.apache.camel.Exchange;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.builder.RouteBuilder;
@@ -48,7 +50,16 @@ public class ForwarderRoute extends RouteBuilder {
         if (outputSslContextParameters != null) {
             HttpComponent https = getContext().getComponent("https", HttpComponent.class);
             https.setSslContextParameters(outputSslContextParameters);
-            log.info("Output SSL configured on Camel HTTPS component");
+
+            // Dev trust-all: also disable hostname verification so that
+            // self-signed localhost certs are accepted without complaint.
+            if (props.getEndpoint().getSsl().isDevTrustAll()) {
+                HostnameVerifier noopVerifier = (hostname, session) -> true;
+                https.setX509HostnameVerifier(noopVerifier);
+                log.warn("Hostname verification DISABLED (dev-trust-all mode)");
+            } else {
+                log.info("Output SSL configured on Camel HTTPS component");
+            }
         }
 
         // ── Error / retry policy ─────────────────────────────────────────
