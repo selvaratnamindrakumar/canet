@@ -1,0 +1,101 @@
+# =============================================================================
+# Dockerfile.netfx-broker-iis
+# C# .NET Framework broker hosted in IIS (Windows container).
+# Replicates WS2008 R2 + IIS 7.5 deployment for low-side C# BF brokers.
+#
+# REQUIRES: Windows container host (cannot run on Linux).
+# REQUIRES: Windows node pool in Kubernetes.
+#
+# VERSION FREEZE: Match .NET Framework version from target environment exactly.
+# =============================================================================
+# escape=`
+
+# ---- Stage 1: Build (Windows SDK) ------------------------------------------
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8-windowsservercore-ltsc2022 AS build
+
+WORKDIR C:/build
+
+# CONFIRM: Adjust NuGet version to match dev toolchain
+ARG NUGET_VERSION=6.8.0
+RUN powershell -NoProfile -Command `
+    Invoke-WebRequest `
+      -Uri "https://dist.nuget.org/win-x86-commandline/v${env:NUGET_VERSION}/nuget.exe" `
+      -OutFile C:/nuget.exe
+
+# Restore NuGet packages from a local/internal mirror
+# CONFIRM: set /source to your internal package mirror
+COPY *.sln .
+COPY BrokerApp/*.csproj BrokerApp/
+RUN C:/nuget.exe restore BrokerApp.sln `
+    -NonInteractive `
+    -PackagesDirectory C:/packages
+
+# Build
+COPY BrokerApp/ BrokerApp/
+RUN msbuild BrokerApp/BrokerApp.csproj `
+    /p:Configuration=Release `
+    /p:OutputPath=C:/publish `
+    /p:Platform="Any CPU" `
+    /p:RestorePackagesPath=C:/packages `
+    /nodeReuse:false `
+    /verbosity:minimal
+
+# ---- Stage 2: IIS runtime ---------------------------------------------------
+# CONFIRM: Adjust .NET Framework version to match exact target version
+FROM mcr.microsoft.com/dotnet/framework/aspnet:4.8-windowsservercore-ltsc2022 AS runtime
+
+# Install any additional Windows features needed by the broker
+# CONFIRM: Add/remove as required for your specific broker
+RUN powershell -NoProfile -Command `
+    Add-WindowsFeature Web-Default-Doc, Web-Static-Content, Web-Http-Errors; `
+    Remove-WebSite -Name "Default Web Site" -ErrorAction SilentlyContinue
+
+# Create IIS site for the broker
+ARG BROKER_PORT=8080
+ARG SITE_NAME=BFBroker
+
+# Deploy application
+RUN New-Item -ItemType Directory -Path "C:/inetpub/bf-broker" -Force | Out-Null
+COPY --from=build C:/publish C:/inetpub/bf-broker
+
+RUN powershell -NoProfile -Command `
+    New-WebAppPool -Name "BFBrokerPool"; `
+    Set-ItemProperty IIS:/AppPools/BFBrokerPool -Name "managedRuntimeVersion" -Value "v4.0"; `
+    Set-ItemProperty IIS:/AppPools/BFBrokerPool -Name "processModel.userName" -Value "ApplicationPoolIdentity"; `
+    New-Website -Name "BFBroker" `
+      -Port ${env:BROKER_PORT} `
+      -PhysicalPath "C:/inetpub/bf-broker" `
+      -ApplicationPool "BFBrokerPool"
+
+# Config mount point (populated at runtime via K8s ConfigMap/Secret)
+RUN New-Item -ItemType Directory -Path "C:/bf-config" -Force | Out-Null
+
+# Copy original Web.config — connection strings / endpoints will be
+# overridden at runtime via environment variable transforms or config mounts
+COPY config/Web.config C:/inetpub/bf-broker/Web.config
+
+# Health check via IIS
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 `
+    CMD powershell -NoProfile -Command `
+        try { `
+            $r = (Invoke-WebRequest -Uri "http://localhost:${env:BROKER_PORT}/health" -UseBasicParsing).StatusCode; `
+            if ($r -eq 200) { exit 0 } else { exit 1 } `
+        } catch { exit 1 }
+
+EXPOSE 8080
+
+# IIS is started automatically by the base image entrypoint (ServiceMonitor.exe)
+# =============================================================================
+# Kubernetes deployment notes:
+#   nodeSelector:
+#     kubernetes.io/os: windows
+#   tolerations:
+#     - key: os
+#       value: windows
+#       effect: NoSchedule
+#
+# Environment variables for config transforms:
+#   BROKER_UPSTREAM_URL   — URL of the upstream component/gateway
+#   BROKER_LISTEN_PORT    — Port IIS will listen on (match EXPOSE above)
+#   DB_CONNECTION_STRING  — Oracle or SQL connection string (from Secret)
+# =============================================================================

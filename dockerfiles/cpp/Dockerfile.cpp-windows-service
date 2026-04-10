@@ -1,0 +1,80 @@
+# =============================================================================
+# Dockerfile.cpp-windows-service
+# C++ component originally running as a Windows service on WS2008 R2.
+# Uses Windows Server Core container with the matching VC++ runtime.
+#
+# REQUIRES: Windows container host.
+# CONFIRM: Visual Studio version used to compile the C++ component.
+# =============================================================================
+# escape=`
+
+FROM mcr.microsoft.com/windows/servercore:ltsc2022
+
+SHELL ["powershell", "-NoProfile", "-Command", "$ErrorActionPreference = 'Stop';"]
+
+# =============================================================================
+# Install the Visual C++ Redistributable matching the compiler version.
+# CONFIRM: Which Visual Studio was used?
+#   VS2008 (VC9)  → MSVCR90.dll  → vcredist2008
+#   VS2010 (VC10) → MSVCR100.dll → vcredist2010
+#   VS2012 (VC11) → MSVCR110.dll → vcredist2012
+#   VS2013 (VC12) → MSVCR120.dll → vcredist2013
+#   VS2015/17/19 (VC14) → VCRUNTIME140.dll → vcredist2015-2019
+# =============================================================================
+
+# Example: VC++ 2010 Redistributable (adjust URL for your version)
+ARG VCREDIST_URL="https://download.microsoft.com/download/C/6/D/C6D0FD4E-9E53-4897-9B91-836EBA2AED74/vcredist_x64.exe"
+ARG VCREDIST_NAME="vcredist2010_x64.exe"
+
+RUN Invoke-WebRequest -Uri $env:VCREDIST_URL -OutFile "C:/$env:VCREDIST_NAME"; `
+    Start-Process "C:/$env:VCREDIST_NAME" -Wait -ArgumentList '/quiet', '/norestart'; `
+    Remove-Item "C:/$env:VCREDIST_NAME"
+
+# Create application directory
+RUN New-Item -ItemType Directory -Path "C:/app" | Out-Null
+RUN New-Item -ItemType Directory -Path "C:/bf-config" | Out-Null
+RUN New-Item -ItemType Directory -Path "C:/logs" | Out-Null
+
+# Copy pre-compiled binary and dependencies
+# CONFIRM: Verify these are the clean-build outputs, not dev machine artifacts
+COPY ./bin/Release/          C:/app/
+COPY ./config/               C:/bf-config/
+
+# Health check: verify the component's listener port is accepting connections
+ARG SERVICE_PORT=9000
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 `
+    CMD powershell -NoProfile -Command `
+        try { `
+            $tcp = New-Object System.Net.Sockets.TcpClient; `
+            $tcp.Connect('localhost', $env:SERVICE_PORT); `
+            $tcp.Close(); `
+            exit 0 `
+        } catch { exit 1 }
+
+EXPOSE 9000
+
+ENV SERVICE_CONFIG=C:/bf-config/service.conf `
+    LOG_DIR=C:/logs `
+    RUNNING_IN_CONTAINER=1
+
+# =============================================================================
+# IMPORTANT: The original Windows Service must run in FOREGROUND mode.
+# If it was registered via sc.exe / InstallUtil, it must be adapted:
+#
+# Option A: Re-entry point (if source available):
+#   Add: if (getenv("RUNNING_IN_CONTAINER")) { run_as_console(); }
+#        else { run_as_service(); }
+#
+# Option B: Use NSSM in container to wrap the service (not recommended
+#   for new containers but acceptable as a temporary bridge):
+#   COPY nssm.exe C:/tools/nssm.exe
+#   ENTRYPOINT ["C:/tools/nssm.exe", "start", "MyService"]
+#
+# Option C: Use SC.exe to register AND start within the container
+#   (only works if the container has SCM access — limited in WS2022 containers)
+#
+# Preferred: Option A (requires minor source code change).
+# =============================================================================
+
+WORKDIR C:/app
+ENTRYPOINT ["C:/app/BFComponent.exe", "--console"]

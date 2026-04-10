@@ -1,0 +1,96 @@
+# =============================================================================
+# Dockerfile.java8-broker
+# Java 8 standalone broker (fat JAR) running as a foreground process.
+# Replaces Windows service wrapper (NSSM / YAJSW / Tanuki) with Docker entrypoint.
+#
+# VERSION FREEZE: Pin ALL versions to match target environment exactly.
+# =============================================================================
+
+# ---- Stage 1: Build ---------------------------------------------------------
+FROM eclipse-temurin:8u392-b08-jdk-focal AS build
+
+ARG MAVEN_VERSION=3.6.3
+RUN apt-get update -qq \
+ && apt-get install -y --no-install-recommends wget \
+ && rm -rf /var/lib/apt/lists/* \
+ && wget -q "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" \
+      -O /tmp/mvn.tar.gz \
+ && tar -xzf /tmp/mvn.tar.gz -C /opt \
+ && ln -s /opt/apache-maven-${MAVEN_VERSION}/bin/mvn /usr/local/bin/mvn \
+ && rm /tmp/mvn.tar.gz
+
+WORKDIR /workspace
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+COPY src ./src
+RUN mvn package -DskipTests -B
+
+# ---- Stage 2: Runtime -------------------------------------------------------
+FROM eclipse-temurin:8u392-b08-jre-focal AS runtime
+
+# Install only what's needed for health-check and upstream wait
+RUN apt-get update -qq \
+ && apt-get install -y --no-install-recommends \
+      netcat-openbsd \
+      curl \
+ && rm -rf /var/lib/apt/lists/*
+
+# Non-root user (matches bfgroup convention across all BF containers)
+RUN groupadd -r -g 1001 bfgroup \
+ && useradd  -r -u 1001 -g bfgroup -d /app -s /sbin/nologin bfuser
+
+WORKDIR /app
+COPY --from=build /workspace/target/*.jar app.jar
+
+# Config and SSL mount point
+RUN mkdir -p /etc/bf/ssl \
+ && chown -R bfuser:bfgroup /app /etc/bf
+
+# Entrypoint script: waits for upstream gateway before starting
+COPY --chown=bfuser:bfgroup scripts/wait-for-upstream.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/wait-for-upstream.sh
+
+# Environment — override these at runtime via Docker -e or K8s ConfigMap/Secret
+ENV BROKER_CONFIG=/etc/bf/broker.properties \
+    BROKER_UPSTREAM_HOST=CONFIGURE_AT_RUNTIME \
+    BROKER_UPSTREAM_PORT=8443 \
+    BROKER_LISTEN_PORT=8080 \
+    JAVA_XMS=256m \
+    JAVA_XMX=512m
+
+# CONFIRM: Match listener port from original wrapper.conf
+EXPOSE 8080
+
+# Health check: verify the broker's listener port is accepting connections
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+    CMD nc -z localhost ${BROKER_LISTEN_PORT} || exit 1
+
+USER bfuser
+
+ENTRYPOINT ["/usr/local/bin/wait-for-upstream.sh"]
+
+# JVM flags translated from the original service wrapper configuration.
+# CONFIRM: Cross-reference with your wrapper.conf / NSSM service config.
+# Original wrapper flags go after -jar app.jar (or before via JAVA_OPTS).
+CMD ["java", \
+  "-Xms256m", \
+  "-Xmx512m", \
+  "-XX:+UseContainerSupport", \
+  "-Dbroker.config=/etc/bf/broker.properties", \
+  "-Djava.security.egd=file:/dev/./urandom", \
+  "-Dfile.encoding=UTF-8", \
+  "-jar", "app.jar"]
+
+# =============================================================================
+# JVM flag translation from service wrapper formats:
+#
+# YAJSW wrapper.conf:
+#   wrapper.java.additional.1=-Dfoo=bar  →  -Dfoo=bar
+#   wrapper.jvm.ms=256                   →  -Xms256m
+#   wrapper.jvm.mx=512                   →  -Xmx512m
+#   wrapper.java.classpath.1=lib/*.jar   →  include in fat-jar (pom.xml shade)
+#
+# NSSM:
+#   AppParameters=-jar broker.jar        →  CMD ["java", "-jar", "broker.jar"]
+#   AppEnvironmentExtra=FOO=bar          →  ENV FOO=bar
+# =============================================================================

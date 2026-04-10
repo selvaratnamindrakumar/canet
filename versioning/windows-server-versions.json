@@ -1,0 +1,143 @@
+{
+  "schema_version": "1.0",
+  "last_updated": "2026-04",
+  "description": "Windows Server and container base image reference for BF system legacy migration",
+  "host_os_versions": [
+    {
+      "version": "Windows Server 2008 R2",
+      "build": "7601",
+      "release_date": "2009-10",
+      "eol_date": "2020-01",
+      "status": "EOL",
+      "notes": "Current BF ATOM dev / target host OS. EOL Jan 2020. No security patches.",
+      "iis_version": "7.5",
+      "max_dotnet_framework": "4.8",
+      "max_tls_native": "1.2 (requires patch KB3140245)",
+      "tls_default": "TLS 1.0 / SSL 3.0",
+      "java_compatible": ["5", "6", "7", "8"],
+      "container_host": false,
+      "container_host_note": "Cannot run Docker containers natively without Hyper-V; EOL in any case"
+    },
+    {
+      "version": "Windows Server 2012 R2",
+      "build": "9600",
+      "eol_date": "2023-10",
+      "status": "EOL",
+      "iis_version": "8.5",
+      "max_dotnet_framework": "4.8",
+      "container_host": "Partial — Windows containers only (no Linux)",
+      "notes": "EOL Oct 2023."
+    },
+    {
+      "version": "Windows Server 2016",
+      "build": "14393",
+      "eol_date": "2027-01",
+      "status": "Active",
+      "iis_version": "10.0",
+      "max_dotnet_framework": "4.8",
+      "container_host": "Yes — Windows containers; Linux containers via Hyper-V isolation",
+      "notes": "First Windows version with native container support."
+    },
+    {
+      "version": "Windows Server 2019",
+      "build": "17763",
+      "eol_date": "2029-01",
+      "status": "Active-LTS",
+      "iis_version": "10.0",
+      "max_dotnet_framework": "4.8",
+      "container_host": "Yes — recommended for Windows containers",
+      "notes": "Recommended if Windows container host is required for BF .NET Fx components."
+    },
+    {
+      "version": "Windows Server 2022",
+      "build": "20348",
+      "eol_date": "2031-10",
+      "status": "Active-LTS",
+      "iis_version": "10.0",
+      "max_dotnet_framework": "4.8",
+      "container_host": "Yes — recommended; eBPF support, improved container networking",
+      "notes": "Best current option for Windows containers."
+    }
+  ],
+  "windows_container_base_images": [
+    {
+      "image": "mcr.microsoft.com/windows/servercore:ltsc2022",
+      "os_version": "Windows Server 2022",
+      "approx_size_gb": 4.0,
+      "use_case": "C++, .NET Fx, legacy apps needing full Windows APIs",
+      "iis_included": false,
+      "notes": "Full Server Core. Largest but most compatible."
+    },
+    {
+      "image": "mcr.microsoft.com/dotnet/framework/aspnet:4.8-windowsservercore-ltsc2022",
+      "os_version": "Windows Server 2022",
+      "approx_size_gb": 4.5,
+      "use_case": ".NET Framework 4.8 ASP.NET IIS apps",
+      "iis_included": true,
+      "notes": "Includes IIS + ASP.NET. Recommended for C# broker IIS deployments."
+    },
+    {
+      "image": "mcr.microsoft.com/dotnet/framework/runtime:4.8-windowsservercore-ltsc2022",
+      "os_version": "Windows Server 2022",
+      "approx_size_gb": 4.1,
+      "use_case": ".NET Framework 4.8 Windows Service / console apps",
+      "iis_included": false,
+      "notes": "No IIS. For Windows Service-style C# components."
+    },
+    {
+      "image": "mcr.microsoft.com/windows/nanoserver:ltsc2022",
+      "os_version": "Windows Server 2022",
+      "approx_size_mb": 280,
+      "use_case": ".NET 8 on Windows, Go, static binaries",
+      "iis_included": false,
+      "notes": "Much smaller than Server Core but very limited API surface. NOT suitable for .NET Fx."
+    }
+  ],
+  "host_container_version_compatibility": {
+    "note": "Windows container image version MUST match or be older than the container host OS version.",
+    "matrix": {
+      "WS2019_host": ["ltsc2019", "ltsc2016", "1903", "1909"],
+      "WS2022_host": ["ltsc2022", "ltsc2019", "ltsc2016"]
+    },
+    "implication_for_bf": "If target K8s Windows node runs WS2019, use ltsc2019 images. If WS2022, use ltsc2022."
+  },
+  "service_wrappers": {
+    "YAJSW": {
+      "full_name": "Yet Another Java Service Wrapper",
+      "language": "Java",
+      "config_file": "wrapper.conf",
+      "container_replacement": "Translate wrapper.conf JVM args to Dockerfile ENTRYPOINT",
+      "common_jvm_flags_to_translate": [
+        "wrapper.java.additional.N → extra JVM args",
+        "wrapper.jvm.ms → -Xms",
+        "wrapper.jvm.mx → -Xmx",
+        "wrapper.app.parameter.N → app args",
+        "wrapper.java.classpath.N → include in fat-jar"
+      ]
+    },
+    "Tanuki_JSW": {
+      "full_name": "Tanuki Java Service Wrapper",
+      "language": "Java",
+      "config_file": "wrapper.conf",
+      "container_replacement": "Same as YAJSW — translate wrapper.conf",
+      "notes": "Commercial product; same conf format as YAJSW"
+    },
+    "NSSM": {
+      "full_name": "Non-Sucking Service Manager",
+      "language": "any",
+      "config_file": "Windows Registry (HKLM\\SYSTEM\\...\\NSSM\\AppParameters)",
+      "container_replacement": "Use ENTRYPOINT with the wrapped executable directly",
+      "extraction": "On WS2008 R2: nssm dump <ServiceName> > service-config.txt"
+    },
+    "WinSW": {
+      "full_name": "Windows Service Wrapper",
+      "config_file": "*.xml (alongside exe)",
+      "container_replacement": "Extract arguments from XML; use as ENTRYPOINT args"
+    },
+    "sc_exe": {
+      "full_name": "Windows SC (Service Control)",
+      "container_replacement": "No wrapper needed — direct ENTRYPOINT",
+      "extraction": "sc qc <ServiceName> to view config"
+    }
+  }
+}

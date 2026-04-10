@@ -1,0 +1,118 @@
+# =============================================================================
+# Dockerfile.java8-tomcat-broker
+# Java 8 broker/web-service deployed as a WAR into Apache Tomcat.
+# Replicates the WS2008 R2 + Tomcat deployment for low-side BF brokers.
+#
+# VERSION FREEZE: Pin ALL versions to match your target environment exactly.
+# Replace all CONFIRM placeholders before building.
+#
+# Usage:
+#   docker build \
+#     --build-arg JAVA_VERSION=8u392-b08 \
+#     --build-arg TOMCAT_VERSION=8.5.100 \
+#     -t bf-broker-tomcat:1.0 .
+# =============================================================================
+
+# ---- Stage 1: Build the WAR -------------------------------------------------
+FROM eclipse-temurin:8u392-b08-jdk-focal AS build
+
+# CONFIRM: Adjust Maven version to match dev environment
+ARG MAVEN_VERSION=3.6.3
+RUN apt-get update -qq \
+ && apt-get install -y --no-install-recommends wget \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN wget -q "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" \
+      -O /tmp/mvn.tar.gz \
+ && tar -xzf /tmp/mvn.tar.gz -C /opt \
+ && ln -s /opt/apache-maven-${MAVEN_VERSION}/bin/mvn /usr/local/bin/mvn \
+ && rm /tmp/mvn.tar.gz
+
+WORKDIR /workspace
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+COPY src ./src
+RUN mvn package -DskipTests -B
+# Result: target/*.war
+
+# ---- Stage 2: Tomcat runtime ------------------------------------------------
+# CONFIRM: Adjust Tomcat version to match target environment
+ARG TOMCAT_VERSION=8.5.100
+FROM eclipse-temurin:8u392-b08-jre-focal AS runtime
+
+ARG TOMCAT_VERSION
+ENV TOMCAT_VERSION=${TOMCAT_VERSION}
+ENV CATALINA_HOME=/opt/tomcat
+ENV PATH="${CATALINA_HOME}/bin:${PATH}"
+
+# Install Tomcat from Apache archives (pinned, not :latest)
+RUN apt-get update -qq \
+ && apt-get install -y --no-install-recommends wget curl \
+ && rm -rf /var/lib/apt/lists/* \
+ && wget -q "https://archive.apache.org/dist/tomcat/tomcat-8/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz" \
+      -O /tmp/tomcat.tar.gz \
+ && tar -xzf /tmp/tomcat.tar.gz -C /opt \
+ && mv /opt/apache-tomcat-${TOMCAT_VERSION} /opt/tomcat \
+ && rm /tmp/tomcat.tar.gz \
+ # Remove Tomcat default webapps (security hardening)
+ && rm -rf ${CATALINA_HOME}/webapps/ROOT \
+           ${CATALINA_HOME}/webapps/examples \
+           ${CATALINA_HOME}/webapps/docs \
+           ${CATALINA_HOME}/webapps/host-manager \
+           ${CATALINA_HOME}/webapps/manager
+
+# Non-root user
+RUN groupadd -r -g 1001 bfgroup \
+ && useradd  -r -u 1001 -g bfgroup -d /app -s /sbin/nologin bfuser \
+ && chown -R bfuser:bfgroup ${CATALINA_HOME}
+
+# Copy broker WAR from build stage
+COPY --from=build /workspace/target/*.war ${CATALINA_HOME}/webapps/broker.war
+
+# Copy original Tomcat config files verbatim from the legacy deployment
+# CONFIRM: Replace these with actual config files from your WS2008 R2 deployment
+COPY config/server.xml    ${CATALINA_HOME}/conf/server.xml
+COPY config/context.xml   ${CATALINA_HOME}/conf/context.xml
+COPY config/web.xml       ${CATALINA_HOME}/conf/web.xml
+# COPY config/logging.properties ${CATALINA_HOME}/conf/logging.properties
+
+RUN chown -R bfuser:bfgroup ${CATALINA_HOME}/conf \
+                            ${CATALINA_HOME}/webapps \
+                            ${CATALINA_HOME}/logs \
+                            ${CATALINA_HOME}/work \
+                            ${CATALINA_HOME}/temp
+
+# Config and SSL mount points (populated at runtime via K8s Volumes/Secrets)
+RUN mkdir -p /etc/bf/ssl && chown -R bfuser:bfgroup /etc/bf
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+    CMD curl -sf http://localhost:8080/broker/health || \
+        curl -sf http://localhost:8080/ || exit 1
+
+USER bfuser
+
+# CONFIRM: Match the HTTP port configured in your server.xml
+EXPOSE 8080
+
+# JVM flags: match what the service wrapper was configured with on WS2008 R2
+# CONFIRM: translate from your wrapper.conf / service config
+ENV CATALINA_OPTS="\
+  -Xms256m \
+  -Xmx512m \
+  -Dbroker.config=/etc/bf/broker.properties \
+  -Djava.security.egd=file:/dev/./urandom \
+  -Dfile.encoding=UTF-8"
+
+# Redirect Tomcat logs to stdout (12-factor)
+ENV CATALINA_OUT=/dev/stdout
+
+CMD ["catalina.sh", "run"]
+
+# =============================================================================
+# VERIFY before deploying:
+# 1. server.xml port matches what high-side/gateway expects
+# 2. SSL connector config matches TLS version the gateway uses
+# 3. Connector timeout values match original deployment
+# 4. Any JNDI datasource definitions in context.xml are externalised
+# =============================================================================

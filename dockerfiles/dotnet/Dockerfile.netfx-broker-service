@@ -1,0 +1,83 @@
+# =============================================================================
+# Dockerfile.netfx-broker-service
+# C# .NET Framework broker that ran as a Windows Service (not IIS-hosted).
+# Adapts the Windows Service pattern to run as a foreground console process
+# inside a Windows container.
+#
+# REQUIRES: Windows container host.
+# =============================================================================
+# escape=`
+
+# ---- Stage 1: Build ---------------------------------------------------------
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8-windowsservercore-ltsc2022 AS build
+
+WORKDIR C:/build
+
+COPY *.sln .
+COPY BrokerService/*.csproj BrokerService/
+RUN nuget restore BrokerService.sln -NonInteractive
+
+COPY BrokerService/ BrokerService/
+RUN msbuild BrokerService/BrokerService.csproj `
+    /p:Configuration=Release `
+    /p:OutputPath=C:/publish `
+    /nodeReuse:false `
+    /verbosity:minimal
+
+# ---- Stage 2: Runtime -------------------------------------------------------
+FROM mcr.microsoft.com/dotnet/framework/runtime:4.8-windowsservercore-ltsc2022 AS runtime
+
+WORKDIR C:/app
+COPY --from=build C:/publish .
+
+# Config mount point
+RUN New-Item -ItemType Directory -Path "C:/bf-config" -Force | Out-Null
+
+# Copy default config
+COPY config/broker.config C:/bf-config/broker.config
+
+# Health check — ping the broker's listener port
+ARG BROKER_PORT=9090
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 `
+    CMD powershell -NoProfile -Command `
+        try { `
+            $tcp = New-Object Net.Sockets.TcpClient; `
+            $tcp.Connect("localhost", ${env:BROKER_PORT}); `
+            $tcp.Close(); exit 0 `
+        } catch { exit 1 }
+
+EXPOSE 9090
+
+# =============================================================================
+# IMPORTANT: The original Windows Service must be adapted to support
+# running as a console application in the container.
+#
+# If the service inherits from System.ServiceProcess.ServiceBase, add
+# a console mode to Main():
+#
+#   static void Main(string[] args)
+#   {
+#       if (Environment.GetEnvironmentVariable("RUNNING_IN_CONTAINER") == "true"
+#           || Environment.UserInteractive)
+#       {
+#           // Console/container mode — run synchronously
+#           var svc = new BrokerService();
+#           svc.StartService(args);
+#           Console.CancelKeyPress += (s, e) => {
+#               e.Cancel = true;
+#               svc.StopService();
+#           };
+#           Thread.Sleep(Timeout.Infinite);
+#       }
+#       else
+#       {
+#           // Legacy Windows Service mode
+#           ServiceBase.Run(new BrokerService());
+#       }
+#   }
+# =============================================================================
+
+ENV RUNNING_IN_CONTAINER=true `
+    BROKER_CONFIG=C:/bf-config/broker.config
+
+ENTRYPOINT ["C:/app/BrokerService.exe"]

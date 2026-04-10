@@ -1,0 +1,193 @@
+# =============================================================================
+# docker-compose.bf-lowside.yml
+# Local integration test stack for BF low-side components.
+# Simulates the low-side environment with mock gateway stubs.
+#
+# CONFIRM: Adjust service names, ports, and image names per component triage.
+# Usage: docker-compose -f docker-compose.bf-lowside.yml up
+#        docker-compose -f docker-compose.bf-lowside.yml up broker-001
+# =============================================================================
+
+version: "3.9"
+
+# ---------- Networks ----------------------------------------------------------
+networks:
+  low-side-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  # Separate network segment to simulate the gateway/boundary
+  gateway-sim-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+
+# ---------- Volumes -----------------------------------------------------------
+volumes:
+  broker-001-logs:
+  broker-002-logs:
+  marshaller-logs:
+
+# ---------- Services ----------------------------------------------------------
+services:
+
+  # ---------- Gateway Stub (simulates high-side boundary) --------------------
+  # Replace with WireMock, Mockoon, or a custom stub matching the real gateway
+  gateway-stub:
+    image: wiremock/wiremock:3.5.4-alpine
+    container_name: bf-gateway-stub
+    ports:
+      - "8443:8443"   # CONFIRM: match the gateway port your brokers connect to
+    volumes:
+      - ./stubs/gateway:/home/wiremock
+    command:
+      - "--port=8443"
+      - "--verbose"
+    networks:
+      gateway-sim-net:
+        ipv4_address: 172.31.0.10
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/__admin/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------- Java Broker 001 (Tomcat WAR) -----------------------------------
+  broker-001:
+    build:
+      context: ../
+      dockerfile: dockerfiles/java/Dockerfile.java8-tomcat-broker
+    image: bf/broker-001:dev
+    container_name: bf-broker-001
+    ports:
+      - "18080:8080"   # Offset port to avoid conflicts; CONFIRM internal port
+    environment:
+      # CONFIRM: these env vars must match what broker-001 reads from config
+      BROKER_UPSTREAM_HOST: gateway-stub
+      BROKER_UPSTREAM_PORT: "8443"
+      BROKER_UPSTREAM_PROTOCOL: HTTPS
+      BROKER_CONFIG: /etc/bf/broker.properties
+      JAVA_OPTS: >-
+        -Xms256m -Xmx512m
+        -Dfile.encoding=UTF-8
+        -Djava.security.egd=file:/dev/./urandom
+    volumes:
+      # Mount config and SSL from local directory (replaces Windows file paths)
+      - ./config/broker-001/broker.properties:/etc/bf/broker.properties:ro
+      - ./config/broker-001/ssl/:/etc/bf/ssl/:ro
+    depends_on:
+      gateway-stub:
+        condition: service_healthy
+    networks:
+      - low-side-net
+      - gateway-sim-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/broker/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ---------- Java Broker 002 (Standalone JAR) --------------------------------
+  broker-002:
+    build:
+      context: ../
+      dockerfile: dockerfiles/java/Dockerfile.java8-broker
+    image: bf/broker-002:dev
+    container_name: bf-broker-002
+    ports:
+      - "18081:8080"
+    environment:
+      BROKER_UPSTREAM_HOST: gateway-stub
+      BROKER_UPSTREAM_PORT: "8443"
+      BROKER_LISTEN_PORT: "8080"
+      BROKER_CONFIG: /etc/bf/broker.properties
+      JAVA_XMS: 256m
+      JAVA_XMX: 512m
+    volumes:
+      - ./config/broker-002/broker.properties:/etc/bf/broker.properties:ro
+      - ./config/broker-002/ssl/:/etc/bf/ssl/:ro
+    depends_on:
+      gateway-stub:
+        condition: service_healthy
+    networks:
+      - low-side-net
+      - gateway-sim-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8080 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+      retries: 5
+
+  # ---------- Low-Side Marshaller --------------------------------------------
+  marshaller:
+    build:
+      context: ../
+      dockerfile: dockerfiles/java/Dockerfile.java8-broker
+      # CONFIRM: marshaller may use different Dockerfile
+    image: bf/marshaller-001:dev
+    container_name: bf-marshaller-001
+    ports:
+      - "19090:9090"
+    environment:
+      MARSHALLER_CONFIG: /etc/bf/marshaller.properties
+      UPSTREAM_HOST: gateway-stub
+      UPSTREAM_PORT: "8443"
+    volumes:
+      - ./config/marshaller/marshaller.properties:/etc/bf/marshaller.properties:ro
+      - ./config/marshaller/ssl/:/etc/bf/ssl/:ro
+    depends_on:
+      gateway-stub:
+        condition: service_healthy
+    networks:
+      - low-side-net
+      - gateway-sim-net
+    restart: unless-stopped
+
+  # ---------- Downstream consumer stub (simulates what brokers send TO) -------
+  downstream-stub:
+    image: wiremock/wiremock:3.5.4-alpine
+    container_name: bf-downstream-stub
+    ports:
+      - "19080:8080"
+    volumes:
+      - ./stubs/downstream:/home/wiremock
+    networks:
+      - low-side-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/__admin/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# =============================================================================
+# Local config file structure expected:
+#   config/
+#   ├── broker-001/
+#   │   ├── broker.properties
+#   │   └── ssl/
+#   │       ├── keystore.jks
+#   │       └── truststore.jks
+#   ├── broker-002/
+#   │   ├── broker.properties
+#   │   └── ssl/
+#   └── marshaller/
+#       ├── marshaller.properties
+#       └── ssl/
+#
+#   stubs/
+#   ├── gateway/            ← WireMock stubs for gateway responses
+#   │   └── mappings/
+#   └── downstream/         ← WireMock stubs for downstream consumers
+#       └── mappings/
+# =============================================================================

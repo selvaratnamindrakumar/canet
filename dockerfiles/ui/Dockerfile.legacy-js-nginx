@@ -1,0 +1,100 @@
+# =============================================================================
+# Dockerfile.legacy-js-nginx
+# Legacy JavaScript UI (static files / AJAX) served via Nginx.
+# Suitable for UI apps originally served by Apache HTTPD, IIS static hosting,
+# or Tomcat with static resources on WS2008 R2.
+#
+# Nginx acts as a drop-in replacement for Apache/IIS static file serving.
+# All dynamic API calls proxy through to backend brokers/services.
+#
+# CONFIRM: Review all absolute paths, hardcoded hostnames, and IE-specific
+# code before containerising. Legacy JS UIs often have hardcoded environment
+# assumptions that must be externalised.
+# =============================================================================
+
+# ---- Stage 1: (Optional) Asset processing / minification --------------------
+# If the original build used Grunt/Gulp/Ant for JS processing, add here.
+# Most legacy JS UIs were served as raw files — if so, skip this stage.
+FROM node:18-alpine AS asset-build
+
+WORKDIR /build
+# CONFIRM: Only include if the UI has a build step.
+# Copy package.json if present
+# COPY package.json package-lock.json ./
+# RUN npm ci --only=production
+# COPY . .
+# RUN npm run build
+
+# For raw static file UIs (no build step):
+COPY . .
+
+# ---- Stage 2: Nginx serving -------------------------------------------------
+FROM nginx:1.26-alpine AS runtime
+
+# Remove default nginx content
+RUN rm -rf /usr/share/nginx/html/*
+
+# Copy static UI files
+COPY --from=asset-build /build/src/main/webapp /usr/share/nginx/html
+# CONFIRM: Adjust source path above to match your project layout
+# Common legacy paths:
+#   - /src/main/webapp     (Maven WAR)
+#   - /WebContent          (Eclipse Dynamic Web Project)
+#   - /wwwroot             (.NET web project)
+#   - /public              (generic)
+#   - /htdocs              (Apache HTTPD style)
+
+# Nginx configuration: proxy API calls to backend brokers
+COPY config/nginx.conf /etc/nginx/nginx.conf
+COPY config/default.conf /etc/nginx/conf.d/default.conf
+
+# Non-root: nginx master stays root (binds port 80) but workers run as nginx user
+# Use unprivileged nginx image for fully non-root:
+# FROM nginxinc/nginx-unprivileged:1.26-alpine
+# Then change EXPOSE 8080 and configure listen 8080; in nginx.conf
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -qO- http://localhost/index.html || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]
+
+# =============================================================================
+# Sample nginx proxy configuration (config/default.conf):
+#
+# server {
+#     listen 80;
+#     server_name _;
+#
+#     root /usr/share/nginx/html;
+#     index index.html index.htm;
+#
+#     # Serve static files
+#     location / {
+#         try_files $uri $uri/ /index.html;
+#     }
+#
+#     # Proxy API calls to Java broker
+#     location /api/ {
+#         proxy_pass http://java-broker:8080/;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_connect_timeout 30s;
+#         proxy_read_timeout 60s;
+#     }
+#
+#     # Proxy web service calls to .NET broker
+#     location /ws/ {
+#         proxy_pass http://dotnet-broker:8080/;
+#         proxy_set_header Host $host;
+#     }
+# }
+#
+# LEGACY IE CONSIDERATIONS:
+# - If the UI targets IE8/IE9/IE10 (common on WS2008 R2 era):
+#   * Ensure HTML5 features not used without polyfills
+#   * Add X-UA-Compatible header: add_header X-UA-Compatible "IE=edge";
+#   * Test with IE11 compatibility mode (IE8/9 containers not available)
+#   * Consider Browsersync proxy for testing
+# =============================================================================
