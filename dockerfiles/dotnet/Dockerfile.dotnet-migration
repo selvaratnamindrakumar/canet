@@ -1,0 +1,67 @@
+# =============================================================================
+# Dockerfile.dotnet-migration
+# Transitional Dockerfile for migrating .NET Framework 4.x → .NET 8
+# Runs BOTH versions side-by-side during a traffic-split migration.
+# Pattern: .NET Framework app in Windows container + .NET 8 sidecar for testing
+#
+# Use this pattern when:
+# - You have a large .NET Fx codebase you can't rewrite all at once
+# - You want to route a percentage of traffic to the new .NET 8 service
+# - You need functional parity testing before cutover
+# =============================================================================
+
+# =============================================================================
+# Option A: .NET 8 Linux — for MIGRATED code (target state)
+# This is the Dockerfile for the new cloud-native service.
+# =============================================================================
+FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build-net8
+
+WORKDIR /src
+
+ARG PROJECT_NAME=YourMigratedApp
+
+COPY ${PROJECT_NAME}/${PROJECT_NAME}.csproj ./${PROJECT_NAME}/
+RUN dotnet restore ./${PROJECT_NAME}/${PROJECT_NAME}.csproj
+
+COPY ${PROJECT_NAME}/. ./${PROJECT_NAME}/
+RUN dotnet publish ./${PROJECT_NAME}/${PROJECT_NAME}.csproj \
+      -c Release \
+      -o /app/publish \
+      --no-restore
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runtime-net8
+
+RUN addgroup -S -g 1001 appgroup \
+ && adduser  -S -u 1001 -G appgroup -H -s /sbin/nologin appuser
+
+WORKDIR /app
+COPY --from=build-net8 /app/publish .
+RUN chown -R appuser:appgroup /app
+
+ENV ASPNETCORE_URLS="http://+:8080" \
+    ASPNETCORE_ENVIRONMENT="Staging"
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD wget -qO- http://localhost:8080/health || exit 1
+
+USER appuser
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "YourMigratedApp.dll"]
+
+# =============================================================================
+# MIGRATION CHECKLIST (comment out as completed)
+# =============================================================================
+# [ ] Replace WebForms pages with Razor Pages or Blazor
+# [ ] Replace WCF server with CoreWCF or ASP.NET Core controllers
+# [ ] Replace System.Web.HttpContext with IHttpContextAccessor
+# [ ] Replace Windows Auth with OIDC / Azure AD / Kerberos negotiate
+# [ ] Replace Registry reads with IConfiguration / environment variables
+# [ ] Replace MSMQ with RabbitMQ / Azure Service Bus
+# [ ] Replace EF6 with EF Core
+# [ ] Replace System.Web.SessionState with distributed cache (Redis)
+# [ ] Replace local file writes with object storage (blob/S3)
+# [ ] Replace app.config / web.config with appsettings.json + env vars
+# [ ] Validate Oracle.ManagedDataAccess.Core on Linux
+# [ ] Run: dotnet tool install -g upgrade-assistant
+#         upgrade-assistant upgrade YourApp.sln
+# =============================================================================

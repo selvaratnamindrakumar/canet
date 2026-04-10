@@ -1,0 +1,97 @@
+# =============================================================================
+# docker-compose.dotnet-app.yml
+# Local development stack for an ASP.NET Core 8 application.
+# Services: api, sqlserver (dev), redis, seq (structured logging)
+# Usage: docker-compose -f docker-compose.dotnet-app.yml up
+# =============================================================================
+
+version: "3.9"
+
+services:
+
+  # ---------- ASP.NET Core 8 API ---------------------------------------------
+  api:
+    build:
+      context: ../
+      dockerfile: dockerfiles/dotnet/Dockerfile.dotnet8
+    image: canet/dotnet-api:dev
+    container_name: dotnet-api
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_URLS: "http://+:8080"
+      ConnectionStrings__DefaultConnection: >-
+        Server=sqlserver,1433;Database=AppDb;
+        User Id=sa;Password=Dev!Password123;
+        TrustServerCertificate=True
+      Redis__Configuration: "redis:6379"
+      Seq__ServerUrl: "http://seq:5341"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - dotnet-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  # ---------- SQL Server (local dev — swap with Oracle for prod) -------------
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: app-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "Dev!Password123"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    networks:
+      - dotnet-net
+    healthcheck:
+      test: >
+        /opt/mssql-tools/bin/sqlcmd -S localhost -U sa
+        -P "Dev!Password123" -Q "SELECT 1" || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ---------- Redis -----------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: dotnet-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - dotnet-net
+
+  # ---------- Seq (structured log viewer) ------------------------------------
+  seq:
+    image: datalust/seq:latest
+    container_name: app-seq
+    environment:
+      ACCEPT_EULA: "Y"
+    ports:
+      - "5341:5341"   # Ingest
+      - "8081:80"     # Web UI
+    volumes:
+      - seq-data:/data
+    networks:
+      - dotnet-net
+
+volumes:
+  sqlserver-data:
+  seq-data:
+
+networks:
+  dotnet-net:
+    driver: bridge

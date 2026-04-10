@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0",
+  "last_updated": "2026-04",
+  "description": ".NET and .NET Framework version reference for container migration",
+  "framework_versions": [
+    {
+      "version": "2.0",
+      "type": "framework",
+      "release_date": "2005-01",
+      "eol_date": "2011-07",
+      "status": "EOL",
+      "linux_container": false,
+      "windows_container": false,
+      "notes": "Obsolete. Upgrade immediately."
+    },
+    {
+      "version": "3.5",
+      "type": "framework",
+      "release_date": "2007-11",
+      "eol_date": "2029-01",
+      "status": "Active",
+      "linux_container": false,
+      "windows_container": true,
+      "windows_base_image": "mcr.microsoft.com/dotnet/framework/runtime:3.5-windowsservercore-ltsc2022",
+      "notes": "Bundled with Windows. Primarily used by legacy apps. No Linux container support."
+    },
+    {
+      "version": "4.0",
+      "type": "framework",
+      "release_date": "2010-04",
+      "eol_date": "2016-01",
+      "status": "EOL",
+      "linux_container": false,
+      "windows_container": false,
+      "notes": "EOL. Upgrade to 4.8."
+    },
+    {
+      "version": "4.5",
+      "type": "framework",
+      "release_date": "2012-08",
+      "eol_date": "2016-01",
+      "status": "EOL",
+      "linux_container": false,
+      "windows_container": false,
+      "notes": "EOL. Upgrade to 4.8."
+    },
+    {
+      "version": "4.6",
+      "type": "framework",
+      "release_date": "2015-07",
+      "eol_date": "2022-04",
+      "status": "EOL",
+      "linux_container": false,
+      "windows_container": true,
+      "windows_base_image": "mcr.microsoft.com/dotnet/framework/runtime:4.6.2-windowsservercore-ltsc2022",
+      "notes": "EOL. Upgrade to 4.8 or migrate to .NET 8."
+    },
+    {
+      "version": "4.7",
+      "type": "framework",
+      "release_date": "2017-04",
+      "eol_date": "2027-01",
+      "status": "Active",
+      "linux_container": false,
+      "windows_container": true,
+      "windows_base_image": "mcr.microsoft.com/dotnet/framework/runtime:4.7.2-windowsservercore-ltsc2022",
+      "notes": "Supported. Consider migrating to .NET 8 for Linux container support."
+    },
+    {
+      "version": "4.8",
+      "type": "framework",
+      "release_date": "2019-04",
+      "eol_date": "2029-01",
+      "status": "Active",
+      "linux_container": false,
+      "windows_container": true,
+      "windows_base_image": "mcr.microsoft.com/dotnet/framework/runtime:4.8-windowsservercore-ltsc2022",
+      "aspnet_base_image": "mcr.microsoft.com/dotnet/framework/aspnet:4.8-windowsservercore-ltsc2022",
+      "sdk_image": "mcr.microsoft.com/dotnet/framework/sdk:4.8-windowsservercore-ltsc2022",
+      "notes": "Final .NET Framework version. Supported on Windows Server Core containers only.",
+      "migration_tool": "dotnet tool install -g upgrade-assistant",
+      "dockerfile": "dockerfiles/dotnet/Dockerfile.netfx48"
+    },
+    {
+      "version": "4.8.1",
+      "type": "framework",
+      "release_date": "2022-08",
+      "eol_date": "2029-01",
+      "status": "Active",
+      "linux_container": false,
+      "windows_container": true,
+      "notes": "Latest .NET Framework update. Only for Windows 11 / Server 2022 hosts."
+    }
+  ],
+  "core_and_modern_versions": [
+    {
+      "version": "3.1",
+      "type": "core-lts",
+      "release_date": "2019-12",
+      "eol_date": "2022-12",
+      "status": "EOL",
+      "lts": true,
+      "linux_container": true,
+      "runtime_image": "mcr.microsoft.com/dotnet/aspnet:3.1",
+      "notes": "EOL. Migrate to .NET 8 immediately."
+    },
+    {
+      "version": "6.0",
+      "type": "lts",
+      "release_date": "2021-11",
+      "eol_date": "2024-11",
+      "status": "EOL",
+      "lts": true,
+      "linux_container": true,
+      "runtime_image": "mcr.microsoft.com/dotnet/aspnet:6.0-alpine",
+      "sdk_image": "mcr.microsoft.com/dotnet/sdk:6.0-alpine",
+      "notes": "EOL November 2024. Migrate to .NET 8."
+    },
+    {
+      "version": "7.0",
+      "type": "sts",
+      "release_date": "2022-11",
+      "eol_date": "2024-05",
+      "status": "EOL",
+      "lts": false,
+      "linux_container": true,
+      "notes": "EOL. Migrate to .NET 8."
+    },
+    {
+      "version": "8.0",
+      "type": "lts",
+      "release_date": "2023-11",
+      "eol_date": "2026-11",
+      "status": "Active-LTS",
+      "lts": true,
+      "linux_container": true,
+      "windows_container": true,
+      "runtime_image": "mcr.microsoft.com/dotnet/aspnet:8.0-alpine",
+      "sdk_image": "mcr.microsoft.com/dotnet/sdk:8.0-alpine",
+      "oracle_nuget": "Oracle.ManagedDataAccess.Core",
+      "notes": "Current LTS. Recommended target for all .NET Framework migrations.",
+      "dockerfile": "dockerfiles/dotnet/Dockerfile.dotnet8"
+    },
+    {
+      "version": "9.0",
+      "type": "sts",
+      "release_date": "2024-11",
+      "eol_date": "2026-05",
+      "status": "Active",
+      "lts": false,
+      "linux_container": true,
+      "runtime_image": "mcr.microsoft.com/dotnet/aspnet:9.0-alpine",
+      "sdk_image": "mcr.microsoft.com/dotnet/sdk:9.0-alpine",
+      "notes": "STS. Use .NET 8 LTS for stability."
+    }
+  ],
+  "feature_compatibility": {
+    "webforms": { "framework": true, "dotnet8": false, "action": "Migrate to Razor Pages or Blazor" },
+    "wcf_server": { "framework": true, "dotnet8": "partial-CoreWCF", "action": "Use CoreWCF NuGet or migrate to REST/gRPC" },
+    "wcf_client": { "framework": true, "dotnet8": true, "action": "Use System.ServiceModel.Http NuGet" },
+    "asmx": { "framework": true, "dotnet8": false, "action": "Migrate to ASP.NET Core Web API" },
+    "windows_registry": { "framework": true, "dotnet8": false, "action": "Externalise to IConfiguration / env vars" },
+    "com_interop": { "framework": true, "dotnet8": false, "action": "Isolate in Windows sidecar container" },
+    "msmq": { "framework": true, "dotnet8": false, "action": "Replace with RabbitMQ / Azure Service Bus" },
+    "ado_net_sqlserver": { "framework": true, "dotnet8": true, "action": "No change needed" },
+    "ado_net_oracle_managed": { "framework": true, "dotnet8": true, "action": "Oracle.ManagedDataAccess.Core" },
+    "entity_framework_6": { "framework": true, "dotnet8": "partial", "action": "Migrate to EF Core 8" },
+    "entity_framework_core": { "framework": "EFCore2+", "dotnet8": true, "action": "No change needed" },
+    "signalr": { "framework": "classic", "dotnet8": "ASP.NET Core SignalR", "action": "Use ASP.NET Core SignalR" },
+    "windows_auth": { "framework": true, "dotnet8": "negotiate-proxy", "action": "Use OIDC or Negotiate auth via reverse proxy" }
+  },
+  "recommended_migration_path": ".NET Framework 4.x → .NET 8 LTS",
+  "migration_tool": "https://github.com/dotnet/upgrade-assistant"
+}

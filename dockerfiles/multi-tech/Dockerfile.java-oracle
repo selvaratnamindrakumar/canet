@@ -1,0 +1,87 @@
+# =============================================================================
+# Dockerfile.java-oracle
+# Java 17 application with Oracle JDBC (thin driver — no Instant Client needed)
+# Base: eclipse-temurin:17-jre-alpine
+# Oracle connectivity via ojdbc11.jar (bundled in fat-jar)
+# =============================================================================
+
+# Stage 1: Build
+FROM eclipse-temurin:17-jdk-alpine AS build
+
+WORKDIR /workspace
+
+RUN apk add --no-cache maven
+
+COPY pom.xml .
+# Ensure ojdbc is in pom.xml:
+# <dependency>
+#   <groupId>com.oracle.database.jdbc</groupId>
+#   <artifactId>ojdbc11</artifactId>
+#   <version>23.3.0.23.09</version>
+# </dependency>
+RUN mvn dependency:go-offline -B
+
+COPY src ./src
+RUN mvn package -DskipTests -B
+
+# Stage 2: Runtime
+FROM eclipse-temurin:17-jre-alpine AS runtime
+
+RUN addgroup -S -g 1001 appgroup \
+ && adduser  -S -u 1001 -G appgroup -H -s /sbin/nologin appuser
+
+WORKDIR /app
+COPY --from=build /workspace/target/*.jar app.jar
+
+# Oracle wallet / TNS config (optional — mount at runtime)
+RUN mkdir -p /etc/oracle/wallet \
+ && chown appuser:appgroup /etc/oracle/wallet
+
+RUN chown appuser:appgroup /app/app.jar
+
+# Oracle connection environment variables
+# Override these at runtime via -e / Kubernetes Secret
+ENV ORACLE_JDBC_URL="jdbc:oracle:thin:@//oracle-host:1521/ORCL" \
+    ORACLE_USER="" \
+    ORACLE_PASSWORD="" \
+    TNS_ADMIN=/etc/oracle/wallet
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD wget -qO- http://localhost:8080/actuator/health || exit 1
+
+USER appuser
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", \
+  "-XX:+UseContainerSupport", \
+  "-XX:MaxRAMPercentage=75.0", \
+  "-XX:InitialRAMPercentage=50.0", \
+  "-Djava.security.egd=file:/dev/./urandom", \
+  "-Doracle.jdbc.timezoneAsRegion=false", \
+  "-jar", "app.jar"]
+
+# =============================================================================
+# Runtime usage examples:
+#
+# Docker:
+#   docker run \
+#     -e ORACLE_JDBC_URL="jdbc:oracle:thin:@//mydb:1521/MYSERVICE" \
+#     -e ORACLE_USER="appuser" \
+#     -e ORACLE_PASSWORD="$(cat /run/secrets/db-password)" \
+#     -v /host/wallet:/etc/oracle/wallet:ro \
+#     myapp:latest
+#
+# Kubernetes (pass secret as env):
+#   env:
+#     - name: ORACLE_USER
+#       valueFrom:
+#         secretKeyRef:
+#           name: oracle-credentials
+#           key: username
+#     - name: ORACLE_PASSWORD
+#       valueFrom:
+#         secretKeyRef:
+#           name: oracle-credentials
+#           key: password
+# =============================================================================

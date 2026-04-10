@@ -1,0 +1,98 @@
+# =============================================================================
+# docker-compose.java-app.yml
+# Local development stack for a Java Spring Boot application.
+# Services: app, postgres (dev DB), redis (cache), mailhog (SMTP trap)
+# Usage: docker-compose -f docker-compose.java-app.yml up
+# =============================================================================
+
+version: "3.9"
+
+services:
+
+  # ---------- Java Application ------------------------------------------------
+  app:
+    build:
+      context: ../
+      dockerfile: dockerfiles/java/Dockerfile.java17
+    image: canet/java-app:dev
+    container_name: java-app
+    ports:
+      - "8080:8080"
+      - "5005:5005"   # Remote debug port (JDWP)
+    environment:
+      SPRING_PROFILES_ACTIVE: "local"
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/appdb"
+      SPRING_DATASOURCE_USERNAME: "appuser"
+      SPRING_DATASOURCE_PASSWORD: "apppassword"
+      SPRING_REDIS_HOST: "redis"
+      SPRING_REDIS_PORT: "6379"
+      SPRING_MAIL_HOST: "mailhog"
+      SPRING_MAIL_PORT: "1025"
+      JAVA_TOOL_OPTIONS: >-
+        -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+        -XX:+UseContainerSupport
+        -XX:MaxRAMPercentage=75.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - app-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+  # ---------- PostgreSQL (development DB — replace with Oracle for prod) ------
+  postgres:
+    image: postgres:16-alpine
+    container_name: app-postgres
+    environment:
+      POSTGRES_DB: appdb
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - app-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d appdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------- Redis (cache / session) ----------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: app-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - app-net
+    command: redis-server --appendonly yes
+
+  # ---------- MailHog (SMTP trap for local email testing) --------------------
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: app-mailhog
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+    networks:
+      - app-net
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  app-net:
+    driver: bridge

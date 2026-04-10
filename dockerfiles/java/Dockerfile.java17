@@ -1,0 +1,74 @@
+# =============================================================================
+# Dockerfile.java17
+# Multi-stage build for a Java 17 application.
+# Base: eclipse-temurin:17-jre-alpine
+# LTS: supported until September 2029  — RECOMMENDED production target
+# =============================================================================
+
+# Stage 1: Build
+FROM eclipse-temurin:17-jdk-alpine AS build
+
+WORKDIR /workspace
+
+RUN apk add --no-cache maven
+
+COPY pom.xml .
+# Also handle Gradle: uncomment and replace the maven steps below
+# COPY build.gradle settings.gradle ./
+# COPY gradle ./gradle
+# COPY gradlew .
+# RUN ./gradlew dependencies --no-daemon
+
+RUN mvn dependency:go-offline -B
+
+COPY src ./src
+RUN mvn package -DskipTests -B
+
+# Stage 2: Optional — create a custom JRE with jlink to further reduce image size
+FROM eclipse-temurin:17-jdk-alpine AS jlink-build
+COPY --from=build /workspace/target/*.jar /tmp/app.jar
+RUN jar xf /tmp/app.jar BOOT-INF/lib/ 2>/dev/null || true
+# Detect required modules (works well for Spring Boot / modular apps)
+RUN jdeps --ignore-missing-deps --print-module-deps \
+      --class-path "BOOT-INF/lib/*" /tmp/app.jar 2>/dev/null \
+    | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//' \
+    > /tmp/modules.txt || echo "java.base" > /tmp/modules.txt
+RUN MODS=$(cat /tmp/modules.txt) \
+ && jlink \
+      --add-modules "$MODS,java.logging,java.sql,java.naming,java.management" \
+      --strip-debug \
+      --no-man-pages \
+      --no-header-files \
+      --compress=2 \
+      --output /opt/jre-custom
+
+# Stage 3: Minimal runtime (Alpine + custom JRE)
+FROM alpine:3.19 AS runtime
+
+# Copy custom JRE from jlink stage
+COPY --from=jlink-build /opt/jre-custom /opt/jre
+
+ENV PATH="/opt/jre/bin:$PATH" \
+    JAVA_HOME="/opt/jre"
+
+RUN addgroup -S -g 1001 appgroup \
+ && adduser  -S -u 1001 -G appgroup -H -s /sbin/nologin appuser
+
+WORKDIR /app
+COPY --from=build /workspace/target/*.jar app.jar
+RUN chown appuser:appgroup app.jar
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD wget -qO- http://localhost:8080/actuator/health || exit 1
+
+USER appuser
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", \
+  "-XX:+UseContainerSupport", \
+  "-XX:MaxRAMPercentage=75.0", \
+  "-XX:InitialRAMPercentage=50.0", \
+  "-XX:+UseG1GC", \
+  "-Djava.security.egd=file:/dev/./urandom", \
+  "-jar", "app.jar"]

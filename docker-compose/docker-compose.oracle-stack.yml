@@ -1,0 +1,111 @@
+# =============================================================================
+# docker-compose.oracle-stack.yml
+# Local development stack with Oracle Database XE 21c + Java application.
+# Oracle XE 21c is free for development use.
+# IMPORTANT: First-time startup takes 3-5 minutes while Oracle initialises.
+#
+# Usage:
+#   docker-compose -f docker-compose.oracle-stack.yml up
+#   docker-compose -f docker-compose.oracle-stack.yml logs -f oracle-db
+# =============================================================================
+
+version: "3.9"
+
+services:
+
+  # ---------- Oracle Database XE 21c ----------------------------------------
+  oracle-db:
+    image: container-registry.oracle.com/database/express:21.3.0-xe
+    # NOTE: requires login to container-registry.oracle.com
+    # docker login container-registry.oracle.com
+    # Accept Oracle Database license at: https://container-registry.oracle.com
+    container_name: oracle-xe
+    environment:
+      ORACLE_PWD: "Oracle123!"       # SYS and SYSTEM password
+      ORACLE_CHARACTERSET: AL32UTF8
+    ports:
+      - "1521:1521"   # Oracle listener
+      - "5500:5500"   # Oracle EM Express
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+      - ./init-scripts:/docker-entrypoint-initdb.d   # SQL init scripts (optional)
+    networks:
+      - oracle-net
+    shm_size: "1g"                   # Oracle requires shared memory
+    restart: unless-stopped
+    healthcheck:
+      test: >
+        healthcheck.sh --connect --sysdba || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 300s             # Oracle needs time to initialise
+
+  # ---------- Java App (JDBC thin — no Instant Client) ----------------------
+  java-app:
+    build:
+      context: ../
+      dockerfile: dockerfiles/multi-tech/Dockerfile.java-oracle
+    image: canet/java-oracle-app:dev
+    container_name: java-oracle-app
+    ports:
+      - "8080:8080"
+    environment:
+      ORACLE_JDBC_URL: "jdbc:oracle:thin:@//oracle-db:1521/XE"
+      ORACLE_USER: "appuser"
+      ORACLE_PASSWORD: "AppPass123!"
+      SPRING_PROFILES_ACTIVE: "local"
+    depends_on:
+      oracle-db:
+        condition: service_healthy
+    networks:
+      - oracle-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s
+      retries: 5
+
+  # ---------- .NET 8 App with Oracle (managed driver) -----------------------
+  dotnet-app:
+    build:
+      context: ../
+      dockerfile: dockerfiles/dotnet/Dockerfile.dotnet8
+    image: canet/dotnet-oracle-app:dev
+    container_name: dotnet-oracle-app
+    ports:
+      - "8081:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_URLS: "http://+:8080"
+      # Oracle.ManagedDataAccess.Core connection string
+      ConnectionStrings__OracleDb: >-
+        Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=oracle-db)(PORT=1521))
+        (CONNECT_DATA=(SERVICE_NAME=XE)));User Id=appuser;Password=AppPass123;
+    depends_on:
+      oracle-db:
+        condition: service_healthy
+    networks:
+      - oracle-net
+    restart: unless-stopped
+
+  # ---------- Adminer (lightweight DB UI — Oracle not natively supported) ---
+  # Use Oracle SQL Developer or DBeaver locally to connect to port 1521
+
+volumes:
+  oracle-data:
+    driver: local
+
+networks:
+  oracle-net:
+    driver: bridge
+
+# =============================================================================
+# One-time setup: create application schema in Oracle XE
+#   docker exec -it oracle-xe sqlplus sys/Oracle123!@XE as sysdba
+#   SQL> CREATE USER appuser IDENTIFIED BY AppPass123!;
+#   SQL> GRANT CONNECT, RESOURCE, CREATE SESSION TO appuser;
+#   SQL> GRANT UNLIMITED TABLESPACE TO appuser;
+# =============================================================================

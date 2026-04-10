@@ -1,0 +1,51 @@
+# =============================================================================
+# Dockerfile.dotnet8
+# Multi-stage build for an ASP.NET Core 8 application on Linux Alpine.
+# Base: mcr.microsoft.com/dotnet/aspnet:8.0-alpine
+# LTS: supported until November 2026
+# =============================================================================
+
+# Stage 1: Build
+FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build
+
+WORKDIR /src
+
+# Restore dependencies (cached if *.csproj unchanged)
+COPY *.csproj ./
+RUN dotnet restore --runtime linux-musl-x64
+
+# Build and publish (self-contained optional — see flag below)
+COPY . ./
+RUN dotnet publish \
+      --configuration Release \
+      --runtime linux-musl-x64 \
+      --self-contained false \
+      --no-restore \
+      --output /app/publish
+
+# Stage 2: Runtime
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runtime
+
+# Non-root user
+RUN addgroup -S -g 1001 appgroup \
+ && adduser  -S -u 1001 -G appgroup -H -s /sbin/nologin appuser
+
+WORKDIR /app
+COPY --from=build /app/publish .
+RUN chown -R appuser:appgroup /app
+
+# ASP.NET Core config: listen on all interfaces
+ENV ASPNETCORE_URLS="http://+:8080" \
+    ASPNETCORE_ENVIRONMENT="Production" \
+    DOTNET_RUNNING_IN_CONTAINER=true \
+    DOTNET_USE_POLLING_FILE_WATCHER=true
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD wget -qO- http://localhost:8080/health || exit 1
+
+USER appuser
+
+EXPOSE 8080
+
+ENTRYPOINT ["dotnet", "YourApp.dll"]
+# Replace "YourApp.dll" with your actual output DLL name

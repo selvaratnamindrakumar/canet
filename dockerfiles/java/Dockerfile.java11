@@ -1,0 +1,49 @@
+# =============================================================================
+# Dockerfile.java11
+# Multi-stage build for a Java 11 application.
+# Base: eclipse-temurin:11-jre-alpine (minimal, ~180 MB final image)
+# LTS: supported until September 2027
+# =============================================================================
+
+# Stage 1: Build
+FROM eclipse-temurin:11-jdk-alpine AS build
+
+WORKDIR /workspace
+
+# Install Maven
+RUN apk add --no-cache maven
+
+# Dependency layer (cached when pom.xml unchanged)
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+COPY src ./src
+RUN mvn package -DskipTests -B
+
+# Optional: verify the JAR was produced
+RUN ls -la target/*.jar
+
+# Stage 2: Minimal runtime
+FROM eclipse-temurin:11-jre-alpine AS runtime
+
+# Alpine: addgroup / adduser syntax differs from Debian/Ubuntu
+RUN addgroup -S -g 1001 appgroup \
+ && adduser  -S -u 1001 -G appgroup -H -s /sbin/nologin appuser
+
+WORKDIR /app
+COPY --from=build /workspace/target/*.jar app.jar
+RUN chown appuser:appgroup app.jar
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD wget -qO- http://localhost:8080/actuator/health || exit 1
+
+USER appuser
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", \
+  "-XX:+UseContainerSupport", \
+  "-XX:MaxRAMPercentage=75.0", \
+  "-XX:InitialRAMPercentage=50.0", \
+  "-Djava.security.egd=file:/dev/./urandom", \
+  "-jar", "app.jar"]

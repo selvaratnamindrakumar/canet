@@ -1,0 +1,149 @@
+{
+  "schema_version": "1.0",
+  "last_updated": "2026-04",
+  "description": "Oracle Database and client version reference for containerisation",
+  "database_versions": [
+    {
+      "version": "11g R2",
+      "major": 11,
+      "release_date": "2007-09",
+      "eol_date": "2013-01",
+      "status": "EOL",
+      "lts": false,
+      "jdbc_driver": "ojdbc6.jar",
+      "jdbc_maven": { "groupId": "com.oracle.database.jdbc", "artifactId": "ojdbc6", "note": "Not on Maven Central — requires Oracle Maven repo" },
+      "instant_client_versions": ["11.2"],
+      "odp_net_managed_min": "12.1",
+      "notes": "Critical security risk. No patches since 2013. Migrate immediately."
+    },
+    {
+      "version": "12c R1",
+      "major": 12,
+      "minor": 1,
+      "release_date": "2013-06",
+      "eol_date": "2022-07",
+      "status": "EOL",
+      "lts": false,
+      "jdbc_driver": "ojdbc8.jar",
+      "jdbc_maven": { "groupId": "com.oracle.database.jdbc", "artifactId": "ojdbc8", "version": "12.2.0.1" },
+      "instant_client_versions": ["12.1"],
+      "notes": "EOL 2022. Migrate to 19c LTS."
+    },
+    {
+      "version": "12c R2",
+      "major": 12,
+      "minor": 2,
+      "release_date": "2016-09",
+      "eol_date": "2022-07",
+      "status": "EOL",
+      "lts": false,
+      "jdbc_driver": "ojdbc8.jar",
+      "jdbc_maven": { "groupId": "com.oracle.database.jdbc", "artifactId": "ojdbc8", "version": "12.2.0.1" },
+      "instant_client_versions": ["12.1", "12.2"],
+      "notes": "EOL 2022. Migrate to 19c LTS."
+    },
+    {
+      "version": "18c",
+      "major": 18,
+      "release_date": "2018-02",
+      "eol_date": "2021-06",
+      "status": "EOL",
+      "lts": false,
+      "jdbc_driver": "ojdbc8.jar",
+      "notes": "Short-term release. EOL 2021."
+    },
+    {
+      "version": "19c",
+      "major": 19,
+      "release_date": "2019-01",
+      "eol_date": "2027-04",
+      "status": "Active-LTS",
+      "lts": true,
+      "jdbc_driver": "ojdbc8.jar",
+      "jdbc_maven": {
+        "groupId": "com.oracle.database.jdbc",
+        "artifactId": "ojdbc8",
+        "version": "19.21.0.0",
+        "maven_central": true
+      },
+      "instant_client_versions": ["19.x"],
+      "odp_net_managed": "Oracle.ManagedDataAccess.Core",
+      "container_image": "container-registry.oracle.com/database/enterprise:19.3.0",
+      "xe_image": null,
+      "notes": "Recommended stable target. LTS until April 2027."
+    },
+    {
+      "version": "21c",
+      "major": 21,
+      "release_date": "2020-11",
+      "eol_date": "2024-04",
+      "status": "EOL",
+      "lts": false,
+      "jdbc_driver": "ojdbc11.jar",
+      "jdbc_maven": {
+        "groupId": "com.oracle.database.jdbc",
+        "artifactId": "ojdbc11",
+        "version": "21.11.0.0",
+        "maven_central": true
+      },
+      "instant_client_versions": ["21.x"],
+      "container_image": "container-registry.oracle.com/database/express:21.3.0-xe",
+      "xe_image": "container-registry.oracle.com/database/express:21.3.0-xe",
+      "notes": "Innovation release. EOL April 2024. Good for dev/test (XE edition)."
+    },
+    {
+      "version": "23ai",
+      "major": 23,
+      "release_date": "2024-05",
+      "eol_date": "2030+",
+      "status": "Active-LTS",
+      "lts": true,
+      "jdbc_driver": "ojdbc11.jar",
+      "jdbc_maven": {
+        "groupId": "com.oracle.database.jdbc",
+        "artifactId": "ojdbc11",
+        "version": "23.4.0.24.05",
+        "maven_central": true
+      },
+      "instant_client_versions": ["23.x"],
+      "odp_net_managed": "Oracle.ManagedDataAccess.Core",
+      "container_image": "container-registry.oracle.com/database/free:latest",
+      "notes": "Latest LTS. AI Vector Search, JSON Duality Views, True Cache. Use for new projects."
+    }
+  ],
+  "instant_client": {
+    "recommended_version": "21.x",
+    "notes": "Use JDBC thin or ODP.NET managed driver when possible — no Instant Client needed.",
+    "container_install": {
+      "oraclelinux8": "microdnf install oracle-instantclient21-basic oracle-instantclient21-sqlplus",
+      "ubuntu": "curl -o /etc/apt/preferences.d/oracle-instantclient https://apt.oracle.com/... (see docs)",
+      "docker_image": "container-registry.oracle.com/database/instantclient:21"
+    },
+    "environment_vars": {
+      "ORACLE_HOME": "/usr/lib/oracle/21/client64",
+      "LD_LIBRARY_PATH": "/usr/lib/oracle/21/client64/lib",
+      "TNS_ADMIN": "/etc/oracle/wallet"
+    }
+  },
+  "jdbc_compatibility_matrix": {
+    "rule": "JDBC client version >= DB server version - 1 major release",
+    "matrix": {
+      "ojdbc8_with_11g": "supported-limited",
+      "ojdbc8_with_12c": "supported",
+      "ojdbc8_with_18c": "supported",
+      "ojdbc8_with_19c": "supported-full",
+      "ojdbc8_with_21c": "supported",
+      "ojdbc11_with_19c": "supported",
+      "ojdbc11_with_21c": "supported-full",
+      "ojdbc11_with_23ai": "supported-full"
+    }
+  },
+  "odp_net_managed": {
+    "nuget_package": "Oracle.ManagedDataAccess.Core",
+    "linux_compatible": true,
+    "no_native_libs_required": true,
+    "min_dotnet": "6.0",
+    "recommended_version": "23.x",
+    "notes": "Pure managed driver. No Oracle Instant Client needed. Supports Linux Alpine."
+  }
+}

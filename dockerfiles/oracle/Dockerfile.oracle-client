@@ -1,0 +1,63 @@
+# =============================================================================
+# Dockerfile.oracle-client
+# Oracle Linux 8 with Oracle Instant Client 21.x pre-installed.
+# Use as a base image for apps that need OCI (C-based) Oracle connectivity.
+#
+# PREFER: For Java apps use JDBC thin driver (ojdbc*.jar) — no native libs needed.
+# PREFER: For .NET apps use Oracle.ManagedDataAccess.Core — no native libs needed.
+# USE THIS: Only when you need SQL*Plus, OCI, or Pro*C tools in the container.
+# =============================================================================
+
+FROM oraclelinux:8-slim
+
+# Oracle Instant Client version to install
+ARG OIC_VERSION=21
+
+# Install Oracle Instant Client from Oracle Linux 8 yum repo
+RUN microdnf install -y oracle-instantclient-release-el8 \
+ && microdnf install -y \
+      oracle-instantclient${OIC_VERSION}-basic \
+      oracle-instantclient${OIC_VERSION}-sqlplus \
+      oracle-instantclient${OIC_VERSION}-tools \
+ && microdnf clean all \
+ && rm -rf /var/cache/yum
+
+# Set Oracle environment variables
+ENV ORACLE_HOME=/usr/lib/oracle/${OIC_VERSION}/client64 \
+    LD_LIBRARY_PATH=/usr/lib/oracle/${OIC_VERSION}/client64/lib \
+    PATH=/usr/lib/oracle/${OIC_VERSION}/client64/bin:$PATH
+
+# Create directory for TNS configuration (mount wallet/tnsnames.ora here)
+RUN mkdir -p /etc/oracle/wallet \
+ && chmod 700 /etc/oracle/wallet
+ENV TNS_ADMIN=/etc/oracle/wallet
+
+# Non-root user
+RUN groupadd -r -g 1001 appgroup \
+ && useradd  -r -u 1001 -g appgroup -d /app -s /sbin/nologin appuser \
+ && mkdir -p /app \
+ && chown appuser:appgroup /app /etc/oracle/wallet
+
+USER appuser
+WORKDIR /app
+
+# Verify installation
+RUN sqlplus -V
+
+# =============================================================================
+# Usage:
+#   Build: docker build --build-arg OIC_VERSION=21 -t myapp-oracle-client .
+#
+#   Mount wallet at runtime:
+#     docker run -v /host/wallet:/etc/oracle/wallet:ro myapp-oracle-client
+#
+#   Kubernetes:
+#     volumeMounts:
+#       - name: oracle-wallet
+#         mountPath: /etc/oracle/wallet
+#         readOnly: true
+#     volumes:
+#       - name: oracle-wallet
+#         secret:
+#           secretName: oracle-wallet-secret
+# =============================================================================

@@ -1,0 +1,153 @@
+{
+  "schema_version": "1.0",
+  "last_updated": "2026-04",
+  "description": "Java/JDK version reference for container migration decisions",
+  "versions": [
+    {
+      "major": 5,
+      "release_date": "2004-09",
+      "eol_date": "2009-10",
+      "status": "EOL",
+      "lts": false,
+      "docker_official_image": false,
+      "container_aware_jvm": false,
+      "recommended_base_image": null,
+      "notes": "No Docker image. Use ubuntu:20.04 + manual JDK5 install if unavoidable.",
+      "migration_target": 17
+    },
+    {
+      "major": 6,
+      "release_date": "2006-12",
+      "eol_date": "2013-02",
+      "status": "EOL",
+      "lts": false,
+      "docker_official_image": false,
+      "container_aware_jvm": false,
+      "recommended_base_image": null,
+      "notes": "No Docker image. Use ubuntu:20.04 + manual JDK6 install if unavoidable.",
+      "migration_target": 17
+    },
+    {
+      "major": 7,
+      "release_date": "2011-07",
+      "eol_date": "2022-07",
+      "status": "EOL",
+      "lts": false,
+      "docker_official_image": false,
+      "container_aware_jvm": false,
+      "recommended_base_image": "azul/zulu-openjdk-debian:7-jre-latest",
+      "notes": "EOL since July 2022. Azul Zulu provides the only maintained JDK7 image.",
+      "jvm_flags": "-Xms512m -Xmx768m -Djava.security.egd=file:/dev/./urandom",
+      "migration_target": 11
+    },
+    {
+      "major": 8,
+      "update_min_for_container_support": "8u191",
+      "release_date": "2014-03",
+      "eol_date": "2030-12",
+      "status": "Active-LTS",
+      "lts": true,
+      "docker_official_image": true,
+      "container_aware_jvm": "partial",
+      "recommended_base_image": "eclipse-temurin:8-jre-focal",
+      "jvm_flags": "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -Djava.security.egd=file:/dev/./urandom",
+      "maven_compatible": ["3.6.x", "3.8.x", "3.9.x"],
+      "gradle_compatible": ["6.x", "7.x", "8.x"],
+      "notes": "UseContainerSupport requires 8u191+. Most common legacy JDK — plan migration to 17.",
+      "migration_target": 17,
+      "dockerfile": "dockerfiles/java/Dockerfile.java8"
+    },
+    {
+      "major": 11,
+      "release_date": "2018-09",
+      "eol_date": "2027-09",
+      "status": "Active-LTS",
+      "lts": true,
+      "docker_official_image": true,
+      "container_aware_jvm": true,
+      "recommended_base_image": "eclipse-temurin:11-jre-alpine",
+      "jvm_flags": "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -Djava.security.egd=file:/dev/./urandom",
+      "maven_compatible": ["3.6.x", "3.8.x", "3.9.x"],
+      "gradle_compatible": ["6.x", "7.x", "8.x"],
+      "notes": "Solid LTS. UseContainerSupport enabled by default. Good stepping stone to JDK 17.",
+      "dockerfile": "dockerfiles/java/Dockerfile.java11"
+    },
+    {
+      "major": 17,
+      "release_date": "2021-09",
+      "eol_date": "2029-09",
+      "status": "Active-LTS",
+      "lts": true,
+      "docker_official_image": true,
+      "container_aware_jvm": true,
+      "recommended_base_image": "eclipse-temurin:17-jre-alpine",
+      "jvm_flags": "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -XX:+UseG1GC -Djava.security.egd=file:/dev/./urandom",
+      "maven_compatible": ["3.8.x", "3.9.x"],
+      "gradle_compatible": ["7.x", "8.x"],
+      "notes": "Recommended production target. Full cgroup v2 support. Records, sealed classes, pattern matching.",
+      "dockerfile": "dockerfiles/java/Dockerfile.java17"
+    },
+    {
+      "major": 21,
+      "release_date": "2023-09",
+      "eol_date": "2031-09",
+      "status": "Active-LTS",
+      "lts": true,
+      "docker_official_image": true,
+      "container_aware_jvm": true,
+      "recommended_base_image": "eclipse-temurin:21-jre-alpine",
+      "jvm_flags": "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -XX:+UseZGC -Djava.security.egd=file:/dev/./urandom",
+      "maven_compatible": ["3.9.x"],
+      "gradle_compatible": ["8.x"],
+      "notes": "Latest LTS. Virtual Threads (Project Loom) GA. Sequenced collections. Pattern matching for switch.",
+      "dockerfile": "dockerfiles/java/Dockerfile.java21"
+    }
+  ],
+  "distributions": {
+    "eclipse-temurin": {
+      "vendor": "Eclipse Adoptium",
+      "alpine": true,
+      "arm64": true,
+      "lts_policy": true,
+      "recommended": true,
+      "dockerhub": "eclipse-temurin"
+    },
+    "amazoncorretto": {
+      "vendor": "Amazon Web Services",
+      "alpine": true,
+      "arm64": true,
+      "lts_policy": true,
+      "recommended": true,
+      "dockerhub": "amazoncorretto"
+    },
+    "azul-zulu": {
+      "vendor": "Azul Systems",
+      "alpine": true,
+      "arm64": true,
+      "lts_policy": true,
+      "recommended": true,
+      "dockerhub": "azul/zulu-openjdk",
+      "notes": "Best option for JDK 7 and 6 legacy containers"
+    },
+    "microsoft-openjdk": {
+      "vendor": "Microsoft",
+      "alpine": true,
+      "arm64": true,
+      "lts_policy": true,
+      "dockerhub": "mcr.microsoft.com/openjdk/jdk"
+    },
+    "graalvm-ce": {
+      "vendor": "Oracle / GraalVM",
+      "alpine": true,
+      "arm64": true,
+      "notes": "Native image compilation for ultra-fast startup — great for serverless/Kubernetes"
+    }
+  },
+  "lts_versions": [8, 11, 17, 21],
+  "recommended_migration_path": [
+    { "from": [5, 6, 7], "to": 11, "then": 17 },
+    { "from": [8], "to": 17 },
+    { "from": [11, 12, 13, 14, 15, 16], "to": 17 },
+    { "from": [17, 18, 19, 20], "to": 21 }
+  ]
+}

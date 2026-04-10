@@ -1,0 +1,49 @@
+# =============================================================================
+# Dockerfile.netfx48
+# .NET Framework 4.8 application — Windows Server Core container
+# IMPORTANT: This requires a Windows container host.
+#            Cannot run on Linux hosts.
+# Base: mcr.microsoft.com/dotnet/framework/aspnet:4.8
+# =============================================================================
+# escape=`
+
+# Stage 1: Build (Windows SDK image)
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8-windowsservercore-ltsc2022 AS build
+
+WORKDIR C:\build
+
+# Restore NuGet packages
+COPY *.sln .
+COPY **\*.csproj .
+# Use NuGet.exe bundled in the SDK image
+RUN nuget restore
+
+# Build and publish
+COPY . .
+RUN msbuild /p:Configuration=Release /p:DeployOnBuild=true `
+    /p:PublishProfile=FolderProfile /p:OutputPath=C:\publish
+
+# Stage 2: Runtime (ASP.NET Framework — IIS)
+FROM mcr.microsoft.com/dotnet/framework/aspnet:4.8-windowsservercore-ltsc2022 AS runtime
+
+# IIS site root
+WORKDIR C:\inetpub\wwwroot
+
+COPY --from=build C:\publish .
+
+# Health check via IIS default page
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 `
+    CMD powershell -command `
+        try { $r=(Invoke-WebRequest -Uri 'http://localhost/' -UseBasicParsing).StatusCode; if($r -eq 200){exit 0}else{exit 1} } `
+        catch { exit 1 }
+
+EXPOSE 80 443
+
+# IIS is started automatically in the aspnet base image
+# =============================================================================
+# NOTES:
+# 1. Kubernetes: requires Windows node pool and nodeSelector:
+#      kubernetes.io/os: windows
+# 2. Image size: ~4 GB — plan for longer pull times
+# 3. Run: bash scripts/dotnet-compatibility.sh 4.8  for migration guidance
+# =============================================================================

@@ -1,0 +1,54 @@
+# =============================================================================
+# Dockerfile.java7-legacy
+# Java 7 legacy application container.
+# NOTE: JDK 7 is EOL (April 2022). Plan migration to JDK 11 or 17.
+# No official Docker image exists — using Azul Zulu 7 on Debian Bullseye.
+# JVM is NOT container-aware — heap limits set explicitly with -Xmx / -Xms.
+# =============================================================================
+
+# Stage 1: Build using Zulu JDK 7
+FROM azul/zulu-openjdk-debian:7-latest AS build
+
+WORKDIR /workspace
+
+# Install Maven (system package Maven is compatible with Java 7 / Maven 3.6.x)
+RUN apt-get update -qq \
+ && apt-get install -y --no-install-recommends maven \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY pom.xml .
+RUN mvn dependency:go-offline -B 2>/dev/null || true   # Best-effort; proceed even if some deps timeout
+
+COPY src ./src
+RUN mvn package -DskipTests -B
+
+# Stage 2: Runtime — minimal JRE only
+FROM azul/zulu-openjdk-debian:7-jre-latest AS runtime
+
+# Security: non-root user
+RUN groupadd -r appgroup --gid=1001 \
+ && useradd -r -g appgroup --uid=1001 --home-dir=/app --shell=/bin/false appuser
+
+WORKDIR /app
+COPY --from=build /workspace/target/*.jar app.jar
+RUN chown -R appuser:appgroup /app
+
+USER appuser
+
+EXPOSE 8080
+
+# JDK 7 is NOT container-aware — hard-code heap values based on your deployment target.
+# Adjust -Xms / -Xmx to roughly 50–75% of the container memory limit.
+# Example: for 1 Gi container → -Xms512m -Xmx768m
+ENTRYPOINT ["java", \
+  "-Xms512m", \
+  "-Xmx768m", \
+  "-Djava.security.egd=file:/dev/./urandom", \
+  "-jar", "app.jar"]
+
+# =============================================================================
+# MIGRATION RECOMMENDATION:
+# JDK 7 is EOL. Use this image only as an interim step.
+# Target: JDK 11 (LTS, EOL 2027) → then JDK 17 (LTS, EOL 2029)
+# Run: bash scripts/java-compatibility.sh 7  for a detailed report
+# =============================================================================

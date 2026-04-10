@@ -1,0 +1,47 @@
+# =============================================================================
+# Dockerfile.java21
+# Multi-stage build for a Java 21 application.
+# Base: eclipse-temurin:21-jre-alpine
+# LTS: supported until September 2031 — latest LTS
+# Notable: Virtual Threads (Project Loom) available — great for I/O-heavy apps
+# =============================================================================
+
+# Stage 1: Build
+FROM eclipse-temurin:21-jdk-alpine AS build
+
+WORKDIR /workspace
+
+RUN apk add --no-cache maven
+
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+COPY src ./src
+RUN mvn package -DskipTests -B
+
+# Stage 2: Runtime
+FROM eclipse-temurin:21-jre-alpine AS runtime
+
+RUN addgroup -S -g 1001 appgroup \
+ && adduser  -S -u 1001 -G appgroup -H -s /sbin/nologin appuser
+
+WORKDIR /app
+COPY --from=build /workspace/target/*.jar app.jar
+RUN chown appuser:appgroup app.jar
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD wget -qO- http://localhost:8080/actuator/health || exit 1
+
+USER appuser
+
+EXPOSE 8080
+
+# Java 21: Virtual Threads enabled by default in Spring Boot 3.2+
+# For older frameworks add: -Dspring.threads.virtual.enabled=true
+ENTRYPOINT ["java", \
+  "-XX:+UseContainerSupport", \
+  "-XX:MaxRAMPercentage=75.0", \
+  "-XX:InitialRAMPercentage=50.0", \
+  "-XX:+UseZGC", \
+  "-Djava.security.egd=file:/dev/./urandom", \
+  "-jar", "app.jar"]
