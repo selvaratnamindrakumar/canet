@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: canet-app
+  thymeleaf:
+    cache: false
+
+server:
+  port: 8080
+
+# External HTTPS API target — swap this URL for any JSON endpoint
+external:
+  api:
+    base-url: https://jsonplaceholder.typicode.com/todos
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.canet: DEBUG

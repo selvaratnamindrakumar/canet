@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>CaNet — HTTPS Data Viewer</title>
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+          integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+          crossorigin="anonymous"/>
+    <link rel="stylesheet" th:href="@{/css/style.css}"/>
+</head>
+<body>
+
+<nav class="navbar navbar-dark bg-dark">
+    <div class="container-fluid">
+        <span class="navbar-brand fw-bold">CaNet Data Viewer</span>
+        <span class="navbar-text text-light small">Live JSON over HTTPS</span>
+    </div>
+</nav>
+
+<div class="container mt-4">
+
+    <!-- Summary cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-md-3">
+            <div class="card text-bg-primary">
+                <div class="card-body">
+                    <div class="card-title small">Total Items</div>
+                    <div class="display-6 fw-bold" th:text="${totalCount}">0</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+            <div class="card text-bg-success">
+                <div class="card-body">
+                    <div class="card-title small">Completed</div>
+                    <div class="display-6 fw-bold" th:text="${completedCount}">0</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+            <div class="card text-bg-warning">
+                <div class="card-body">
+                    <div class="card-title small">Pending</div>
+                    <div class="display-6 fw-bold" th:text="${totalCount - completedCount}">0</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+            <div class="card text-bg-secondary">
+                <div class="card-body">
+                    <div class="card-title small">REST Endpoint</div>
+                    <a href="/api/data" class="btn btn-sm btn-light mt-1">View JSON</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="mb-3 d-flex gap-2 align-items-center">
+        <input id="filterInput" type="text" class="form-control w-auto flex-grow-1"
+               placeholder="Filter by title…" onkeyup="filterTable()"/>
+        <select id="statusFilter" class="form-select w-auto" onchange="filterTable()">
+            <option value="all">All statuses</option>
+            <option value="true">Completed</option>
+            <option value="false">Pending</option>
+        </select>
+    </div>
+
+    <!-- Data table -->
+    <div th:if="${#lists.isEmpty(items)}" class="alert alert-warning">
+        No data returned from the external API. Check the logs for errors.
+    </div>
+
+    <div th:unless="${#lists.isEmpty(items)}" class="table-responsive">
+        <table class="table table-striped table-hover align-middle" id="dataTable">
+            <thead class="table-dark">
+                <tr>
+                    <th>ID</th>
+                    <th>User ID</th>
+                    <th>Title</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="item : ${items}"
+                    th:data-completed="${item.completed}">
+                    <td th:text="${item.id}"></td>
+                    <td th:text="${item.userId}"></td>
+                    <td th:text="${item.title}"></td>
+                    <td>
+                        <span th:if="${item.completed}"
+                              class="badge text-bg-success">Completed</span>
+                        <span th:unless="${item.completed}"
+                              class="badge text-bg-warning text-dark">Pending</span>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <p class="text-muted small mt-3">
+        Data sourced via HTTPS from
+        <a href="/api/data" target="_blank">/api/data</a>
+    </p>
+</div>
+
+<script>
+function filterTable() {
+    const text   = document.getElementById('filterInput').value.toLowerCase();
+    const status = document.getElementById('statusFilter').value;
+    document.querySelectorAll('#dataTable tbody tr').forEach(row => {
+        const title     = row.cells[2].textContent.toLowerCase();
+        const completed = row.dataset.completed;
+        const titleOk  = title.includes(text);
+        const statusOk = status === 'all' || completed === status;
+        row.style.display = titleOk && statusOk ? '' : 'none';
+    });
+}
+</script>
+
+</body>
+</html>
