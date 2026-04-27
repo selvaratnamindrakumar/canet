@@ -45,4 +45,10 @@ public class DataController {
         DataItem item = dataService.fetchById(id);
         return item != null ? ResponseEntity.ok(item) : ResponseEntity.notFound().build();
     }
+
+    /** About/comparison page */
+    @GetMapping("/about")
+    public String about() {
+        return "about";
+    }
 }
