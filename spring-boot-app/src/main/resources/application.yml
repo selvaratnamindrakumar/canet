@@ -13,8 +13,8 @@ server:
 #
 # Examples:
 #   Todos (default):  https://jsonplaceholder.typicode.com/todos
-#   Handset details:  https://api.example.com/handsets          (fields: tac, marketingName, manufacturer, modelName, …)
-#   Any REST API:     https://your-api.example.com/resources
+#   Handset details:  https://api.example.com/handsets          (fields: tac, marketingName, manufacturer, …)
+#   Local mock:       start mock-server then run with --spring.profiles.active=dev
 external:
   api:
     base-url: https://jsonplaceholder.typicode.com/todos
@@ -31,3 +31,18 @@ management:
 logging:
   level:
     com.canet: DEBUG
+
+---
+# ── dev profile ───────────────────────────────────────────────────────────────
+# Points the main app at the local mock-server instead of the live API.
+# Usage:
+#   1. cd mock-server && mvn spring-boot:run      (starts on port 8081)
+#   2. cd spring-boot-app && mvn spring-boot:run -Dspring-boot.run.profiles=dev
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+external:
+  api:
+    base-url: http://localhost:8081/handsets

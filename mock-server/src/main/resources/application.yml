@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: canet-mock-server
+
+server:
+  port: 8081
+
+logging:
+  level:
+    com.canet: DEBUG
