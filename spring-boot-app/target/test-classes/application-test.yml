@@ -1,4 +1,0 @@
-external:
-  api:
-    # Overridden in individual tests to point at WireMock / MockRestServiceServer
-    base-url: http://localhost:9090/todos
