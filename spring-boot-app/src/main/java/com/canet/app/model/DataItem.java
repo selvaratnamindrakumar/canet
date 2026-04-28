@@ -2,6 +2,12 @@ package com.canet.app.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+/**
+ * Example of a typed model for a fixed-schema API (jsonplaceholder todos).
+ * The live service uses {@code Map<String, Object>} instead so the UI adapts
+ * to any JSON schema (handsets, todos, products …) without code changes.
+ * Keep this class if you need compile-time field validation for a known schema.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class DataItem {
 

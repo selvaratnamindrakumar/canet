@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>CaNet — Why Spring Boot?</title>
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+          integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+          crossorigin="anonymous"/>
+    <link rel="stylesheet" th:href="@{/css/style.css}"/>
+</head>
+<body>
+
+<nav class="navbar navbar-dark bg-dark">
+    <div class="container-fluid">
+        <span class="navbar-brand fw-bold">CaNet Data Viewer</span>
+        <div class="d-flex gap-3 align-items-center">
+            <a href="/" class="nav-link text-white-50">Data</a>
+            <a href="/about" class="nav-link text-white active">Why Spring Boot?</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-4 pb-5">
+
+    <h1 class="mb-1">Spring Boot vs JavaScript-based HTTPS Data Fetching</h1>
+    <p class="text-muted mb-4">
+        A side-by-side comparison of this system against a client-side JavaScript
+        approach (React / Vue / vanilla fetch) that calls an HTTPS API directly
+        from the browser.
+    </p>
+
+    <!-- ── Quick scorecard ─────────────────────────────────────────────── -->
+    <div class="row g-3 mb-5">
+        <div class="col-6 col-md-3">
+            <div class="card text-bg-success text-center py-3">
+                <div class="fs-1 fw-bold">0</div>
+                <div class="small">npm packages</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-bg-success text-center py-3">
+                <div class="fs-1 fw-bold">0</div>
+                <div class="small">CORS issues</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-bg-success text-center py-3">
+                <div class="fs-1 fw-bold">1</div>
+                <div class="small">language (Java)</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-bg-success text-center py-3">
+                <div class="fs-1 fw-bold">3</div>
+                <div class="small">test layers</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Detailed comparison table ──────────────────────────────────── -->
+    <h2 class="h4 mb-3">Detailed comparison</h2>
+    <div class="table-responsive mb-5">
+        <table class="table table-bordered align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th style="width:22%">Concern</th>
+                    <th style="width:39%">JavaScript (browser fetch / Node proxy)</th>
+                    <th style="width:39%">This system (Spring Boot + Thymeleaf)</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                <tr>
+                    <td class="fw-semibold">HTTPS &amp; CORS</td>
+                    <td>
+                        Browser enforces CORS on every cross-origin HTTPS call.
+                        Requires the remote API to set
+                        <code>Access-Control-Allow-Origin</code>, or you must add
+                        a proxy server anyway — adding a layer of complexity.
+                    </td>
+                    <td class="table-success">
+                        The JVM makes the HTTPS request server-to-server.
+                        CORS does not apply. No proxy needed. SSL is handled
+                        by Java's trust store, which already trusts all major CAs.
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="fw-semibold">API key / credential safety</td>
+                    <td>
+                        Any API key embedded in client-side JS is visible in
+                        browser DevTools and can be scraped from the bundle.
+                    </td>
+                    <td class="table-success">
+                        Credentials live in <code>application.yml</code> or
+                        environment variables on the server — never sent to
+                        the browser.
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="fw-semibold">Dependency surface</td>
+                    <td>
+                        A typical React/Vue project pulls in
+                        <strong>500 – 1 500+ transitive npm packages</strong>.
+                        Each is a potential vulnerability and a maintenance burden
+                        (<code>npm audit</code> warnings, breaking changes,
+                        abandoned packages).
+                    </td>
+                    <td class="table-success">
+                        Four Maven dependencies: <code>spring-boot-starter-web</code>,
+                        <code>thymeleaf</code>, <code>actuator</code>, and
+                        <code>spring-boot-starter-test</code>.
+                        Spring Boot manages compatible versions via its BOM.
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="fw-semibold">Build toolchain</td>
+                    <td>
+                        Requires Node.js, npm/yarn/pnpm, a bundler (Webpack /
+                        Vite / esbuild), Babel or tsc, and often ESLint + Prettier.
+                        Breakage when Node versions or bundler configs diverge
+                        across machines.
+                    </td>
+                    <td class="table-success">
+                        <code>mvn package</code> — one command, reproducible on
+                        any machine with Java 17. No separate frontend build step.
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="fw-semibold">Docker image size</td>
+                    <td>
+                        A Node-based image typically includes the Node runtime
+                        and may contain <code>node_modules</code> unless carefully
+                        pruned. Images of 400 MB+ are common.
+                    </td>
+                    <td class="table-success">
+                        Multi-stage build: the Maven stage is discarded.
+                        The final image is <code>eclipse-temurin:17-jre-alpine</code>
+                        plus the single fat JAR — typically ~180 MB.
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="fw-semibold">Type safety</td>
+                    <td>
+                        JavaScript is dynamically typed. A shape change in the
+                        remote JSON silently produces <code>undefined</code> values
+                        that only surface as runtime errors in the UI.
+                    </td>
+                    <td class="table-success">
+                        <code>DataItem</code> is a typed Java class.
+                        <code>@JsonIgnoreProperties(ignoreUnknown = true)</code>
+                        handles extra fields gracefully; missing required fields
+                        cause a clear deserialization error, not a silent UI glitch.
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="fw-semibold">Error handling</td>
+                    <td>
+                        Errors must be handled in both the browser fetch layer
+                        (network, CORS, HTTP status) and in the UI rendering layer
+                        — two separate error boundaries in different files.
+                    </td>
+                    <td class="table-success">
+                        A single <code>try/catch</code> in
+                        <code>HttpsDataServiceImpl</code> covers all failure modes.
+                        The controller always passes a (possibly empty) list to
+                        the template, which shows a clear warning.
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="fw-semibold">Testing the HTTPS call</td>
+                    <td>
+                        Mocking <code>fetch</code> or <code>axios</code> in Jest
+                        requires manual stubs or libraries like
+                        <code>msw</code> (Mock Service Worker).
+                        Testing real SSL handshakes from the browser is impractical
+                        in unit tests.
+                    </td>
+                    <td class="table-success">
+                        Three complementary layers:
+                        <ol class="mb-0 ps-3 small">
+                            <li><strong>MockMvc</strong> — controller slice, zero network</li>
+                            <li><strong>MockRestServiceServer</strong> — built into Spring, intercepts RestTemplate at the JVM level</li>
+                            <li><strong>WireMock</strong> — embedded HTTP server testing real TCP, delays, 5xx, and request verification</li>
+                        </ol>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="fw-semibold">Server-side rendering (SEO)</td>
+                    <td>
+                        Single-page apps deliver an empty <code>&lt;div&gt;</code>
+                        until JS loads and the fetch completes.
+                        Requires SSR frameworks (Next.js, Nuxt) to fix — adding
+                        yet more complexity.
+                    </td>
+                    <td class="table-success">
+                        Thymeleaf renders the full HTML on the server before the
+                        first byte reaches the browser. Works without JavaScript
+                        enabled. Fully crawlable by search engines with no extra
+                        configuration.
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="fw-semibold">Operational observability</td>
+                    <td>
+                        Requires third-party APM agents or custom logging to observe
+                        outbound HTTP calls. Browser network logs are client-only.
+                    </td>
+                    <td class="table-success">
+                        <code>spring-boot-starter-actuator</code> provides
+                        <code>/actuator/health</code> and <code>/actuator/info</code>
+                        out of the box. SLF4J logs every outbound call with URL and
+                        error detail, visible in any log aggregation tool.
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="fw-semibold">Long-term maintainability</td>
+                    <td>
+                        JavaScript ecosystem moves fast. A project untouched for
+                        12 months can accumulate dozens of breaking changes and
+                        security advisories across its transitive dependency tree.
+                    </td>
+                    <td class="table-success">
+                        Spring Boot's LTS releases and BOM mean a single version
+                        bump (<code>&lt;parent&gt;</code> in pom.xml) updates all
+                        compatible dependencies in one step. Java LTS versions
+                        provide multi-year stability guarantees.
+                    </td>
+                </tr>
+
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ── When JS is still the right choice ──────────────────────────── -->
+    <h2 class="h4 mb-3">When a JavaScript frontend is still the right choice</h2>
+    <div class="card border-warning mb-4">
+        <div class="card-body">
+            <p class="mb-2">
+                This comparison is not a blanket rejection of JavaScript.
+                A client-side JS approach is preferable when:
+            </p>
+            <ul class="mb-0">
+                <li>The UI requires <strong>rich, stateful interactivity</strong> (drag-and-drop, real-time collaboration, canvas/WebGL).</li>
+                <li>The application is a <strong>public consumer SPA</strong> where time-to-interactive and offline capability are critical.</li>
+                <li>The team's existing expertise is primarily in a JS framework and the switch cost outweighs the benefits.</li>
+                <li>The remote API is <strong>already under your control</strong> and CORS headers can be set correctly.</li>
+            </ul>
+        </div>
+    </div>
+
+    <p class="text-muted small">
+        For the CaNet use-case — fetching structured JSON from a third-party HTTPS
+        endpoint and displaying it in a table — the Spring Boot approach eliminates
+        an entire category of infrastructure complexity with no meaningful trade-off.
+    </p>
+
+</div>
+</body>
+</html>

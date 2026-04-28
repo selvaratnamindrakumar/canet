@@ -1,12 +1,11 @@
 package com.canet.app.service;
 
-import com.canet.app.model.DataItem;
-
 import java.util.List;
+import java.util.Map;
 
 public interface HttpsDataService {
 
-    List<DataItem> fetchAll();
+    List<Map<String, Object>> fetchAll();
 
-    DataItem fetchById(int id);
+    Map<String, Object> fetchById(String id);
 }

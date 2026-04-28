@@ -1,0 +1,4 @@
+/home/user/canet/spring-boot-app/src/test/java/com/canet/app/controller/DataControllerTest.java
+/home/user/canet/spring-boot-app/src/test/java/com/canet/app/mock/MockApiServerTest.java
+/home/user/canet/spring-boot-app/src/test/java/com/canet/app/CaNetApplicationTests.java
+/home/user/canet/spring-boot-app/src/test/java/com/canet/app/service/HttpsDataServiceTest.java

@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.canet.app.mock.MockApiServerTest
+-------------------------------------------------------------------------------
+Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.527 s -- in com.canet.app.mock.MockApiServerTest

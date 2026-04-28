@@ -1,0 +1,4 @@
+com/canet/app/service/HttpsDataServiceTest.class
+com/canet/app/mock/MockApiServerTest.class
+com/canet/app/CaNetApplicationTests.class
+com/canet/app/controller/DataControllerTest.class
