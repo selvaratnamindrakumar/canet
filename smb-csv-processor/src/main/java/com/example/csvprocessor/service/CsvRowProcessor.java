@@ -90,7 +90,7 @@ public class CsvRowProcessor {
     public ProcessingResult processFile(File csvFile) throws IOException {
         MappingConfiguration config = mappingConfigService.getConfiguration();
         String timestamp = new SimpleDateFormat(outputProperties.getTimestampFormat()).format(new Date());
-        String baseName  = stripExtension(csvFile.getName());
+        String baseName  = sanitiseFileName(stripExtension(csvFile.getName()));
 
         File successFile    = new File(directoryProperties.getOutputSuccess(),
                 baseName + "_" + outputProperties.getSuccessPrefix() + "_" + timestamp + ".csv");
@@ -466,6 +466,11 @@ public class CsvRowProcessor {
     private static String stripExtension(String name) {
         int dot = name.lastIndexOf('.');
         return dot > 0 ? name.substring(0, dot) : name;
+    }
+
+    /** Replaces whitespace runs with hyphens so output filenames are shell/SFTP safe. */
+    private static String sanitiseFileName(String name) {
+        return name.replaceAll("\\s+", "-");
     }
 
     // -------------------------------------------------------------------------
