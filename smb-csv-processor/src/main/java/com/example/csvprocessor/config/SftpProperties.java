@@ -51,6 +51,13 @@ public class SftpProperties {
     /** Connection timeout in milliseconds. */
     private int connectTimeoutMs = 30_000;
 
+    /**
+     * Socket (data transfer) timeout in milliseconds.
+     * Applied during the actual file transfer — must be large enough for very large files.
+     * Default: 0 (no timeout — transfer runs until complete regardless of size).
+     */
+    private int soTimeoutMs = 0;
+
     // -------------------------------------------------------------------------
     // Getters / Setters
     // -------------------------------------------------------------------------
@@ -81,4 +88,7 @@ public class SftpProperties {
 
     public int getConnectTimeoutMs() { return connectTimeoutMs; }
     public void setConnectTimeoutMs(int connectTimeoutMs) { this.connectTimeoutMs = connectTimeoutMs; }
+
+    public int getSoTimeoutMs() { return soTimeoutMs; }
+    public void setSoTimeoutMs(int soTimeoutMs) { this.soTimeoutMs = soTimeoutMs; }
 }

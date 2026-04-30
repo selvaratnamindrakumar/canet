@@ -62,7 +62,8 @@ public class SftpUploadRoute extends RouteBuilder {
                 .append("?username=").append(encode(sftpProperties.getUsername()))
                 .append("&disconnect=true")
                 .append("&binary=true")
-                .append("&connectTimeout=").append(sftpProperties.getConnectTimeoutMs());
+                .append("&connectTimeout=").append(sftpProperties.getConnectTimeoutMs())
+                .append("&soTimeout=").append(sftpProperties.getSoTimeoutMs());
 
         boolean useKeyAuth = sftpProperties.getPrivateKeyPath() != null
                 && !sftpProperties.getPrivateKeyPath().isBlank();

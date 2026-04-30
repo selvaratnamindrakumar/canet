@@ -37,7 +37,9 @@ public class MappingConfigService {
 
     private static final Logger log = LoggerFactory.getLogger(MappingConfigService.class);
 
-    @Value("classpath:mapping.yml")
+    // Supports external override via env var MAPPING_CONFIG_PATH=file:/app/mapping.yml
+    // Falls back to the mapping.yml baked inside the JAR
+    @Value("${mapping.config-path:classpath:mapping.yml}")
     private Resource mappingResource;
 
     private MappingConfiguration configuration;
