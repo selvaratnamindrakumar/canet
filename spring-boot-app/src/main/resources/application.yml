@@ -45,4 +45,4 @@ spring:
 
 external:
   api:
-    base-url: http://localhost:8081/handsets
+    base-url: http://localhost:8081/handsetdetails

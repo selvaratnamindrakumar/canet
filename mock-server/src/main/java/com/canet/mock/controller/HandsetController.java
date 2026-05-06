@@ -14,17 +14,23 @@ import java.util.List;
 /**
  * Simulates a real handset-details API.
  *
+ * Both /handsets and /handsetdetails path prefixes are supported so the
+ * main canet-app can be pointed at either URL pattern.
+ *
  * Endpoints
  * ─────────
- *   GET /handsets                          – all records
- *   GET /handsets?manufacturer=Samsung     – filter by manufacturer (case-insensitive)
- *   GET /handsets/{tac}                    – single record by TAC
+ *   GET /handsetdetails                        – all records
+ *   GET /handsetdetails?manufacturer=Samsung   – case-insensitive filter
+ *   GET /handsetdetails/{tac}                  – single record; 404 if not found
  *
- * Point the main canet-app at this server via application-dev.yml:
- *   external.api.base-url: http://localhost:8081/handsets
+ *   GET /handsets                              – same data, alternate path
+ *   GET /handsets?manufacturer=Samsung
+ *   GET /handsets/{tac}
+ *
+ * Dev profile usage (main canet-app application.yml):
+ *   external.api.base-url: http://localhost:8081/handsetdetails
  */
 @RestController
-@RequestMapping("/handsets")
 public class HandsetController {
 
     private final HandsetRepository repository;
@@ -33,19 +39,42 @@ public class HandsetController {
         this.repository = repository;
     }
 
-    @GetMapping
+    // ── /handsetdetails ───────────────────────────────────────────────────────
+
+    @GetMapping("/handsetdetails")
+    public ResponseEntity<List<HandsetRecord>> listByPath(
+            @RequestParam(required = false) String manufacturer) {
+        return buildList(manufacturer);
+    }
+
+    @GetMapping("/handsetdetails/{tac}")
+    public ResponseEntity<HandsetRecord> byTacDetailPath(@PathVariable String tac) {
+        return byTac(tac);
+    }
+
+    // ── /handsets (alternate path kept for compatibility) ─────────────────────
+
+    @GetMapping("/handsets")
     public ResponseEntity<List<HandsetRecord>> list(
             @RequestParam(required = false) String manufacturer) {
+        return buildList(manufacturer);
+    }
 
+    @GetMapping("/handsets/{tac}")
+    public ResponseEntity<HandsetRecord> byTacHandsetsPath(@PathVariable String tac) {
+        return byTac(tac);
+    }
+
+    // ── shared logic ──────────────────────────────────────────────────────────
+
+    private ResponseEntity<List<HandsetRecord>> buildList(String manufacturer) {
         List<HandsetRecord> result = (manufacturer == null || manufacturer.isBlank())
                 ? repository.findAll()
                 : repository.findByManufacturer(manufacturer);
-
         return ResponseEntity.ok(result);
     }
 
-    @GetMapping("/{tac}")
-    public ResponseEntity<HandsetRecord> byTac(@PathVariable String tac) {
+    private ResponseEntity<HandsetRecord> byTac(String tac) {
         return repository.findByTac(tac)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
