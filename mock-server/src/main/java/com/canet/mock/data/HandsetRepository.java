@@ -1,8 +1,10 @@
 package com.canet.mock.data;
 
 import com.canet.mock.model.HandsetRecord;
+import com.canet.mock.model.TacSearchResponse;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -136,5 +138,14 @@ public class HandsetRepository {
 
     public Optional<HandsetRecord> findByTac(String tac) {
         return Optional.ofNullable(byTac.get(tac));
+    }
+
+    public TacSearchResponse findByTacs(List<String> tacs) {
+        List<HandsetRecord> found    = new ArrayList<>();
+        List<String>        notFound = new ArrayList<>();
+        for (String t : tacs) {
+            findByTac(t).ifPresentOrElse(found::add, () -> notFound.add(t));
+        }
+        return new TacSearchResponse(tacs.size(), found.size(), found, notFound);
     }
 }

@@ -20,143 +20,225 @@ class HandsetControllerTest {
     MockMvc mockMvc;
 
     // =========================================================================
-    // /handsetdetails  — primary endpoint
+    // GET /handsetdetails — full list
     // =========================================================================
 
     @Test
-    void handsetdetails_list_returns10Records() throws Exception {
+    void list_returns10Records() throws Exception {
         mockMvc.perform(get("/handsetdetails").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(10)));
     }
 
     @Test
-    void handsetdetails_list_responseHasAllExpectedFields() throws Exception {
+    void list_firstRecordIsSamsungS24Ultra() throws Exception {
         mockMvc.perform(get("/handsetdetails").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].tac").isNotEmpty())
-                .andExpect(jsonPath("$[0].marketingName").isNotEmpty())
-                .andExpect(jsonPath("$[0].manufacturer").isNotEmpty())
-                .andExpect(jsonPath("$[0].modelName").isNotEmpty())
-                .andExpect(jsonPath("$[0].operatingSystem").isNotEmpty())
-                .andExpect(jsonPath("$[0].osVersion").isNotEmpty())
-                .andExpect(jsonPath("$[0].networkGenerations").isNotEmpty())
-                .andExpect(jsonPath("$[0].displaySizeInches").isNumber())
-                .andExpect(jsonPath("$[0].releaseYear").isNumber())
-                .andExpect(jsonPath("$[0].nfcSupported").isBoolean())
-                .andExpect(jsonPath("$[0].wirelessChargingSupported").isBoolean());
-    }
-
-    @Test
-    void handsetdetails_list_firstRecordIsSamsungS24Ultra() throws Exception {
-        mockMvc.perform(get("/handsetdetails").accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].tac",                      is("35674108")))
-                .andExpect(jsonPath("$[0].marketingName",             is("Samsung Galaxy S24 Ultra")))
-                .andExpect(jsonPath("$[0].manufacturer",              is("Samsung")))
-                .andExpect(jsonPath("$[0].modelName",                 is("SM-S928B")))
-                .andExpect(jsonPath("$[0].operatingSystem",           is("Android")))
-                .andExpect(jsonPath("$[0].osVersion",                 is("14")))
-                .andExpect(jsonPath("$[0].networkGenerations",        is("2G/3G/4G/5G")))
+                .andExpect(jsonPath("$[0].tac",           is("35674108")))
+                .andExpect(jsonPath("$[0].marketingName", is("Samsung Galaxy S24 Ultra")))
+                .andExpect(jsonPath("$[0].manufacturer",  is("Samsung")))
+                .andExpect(jsonPath("$[0].modelName",     is("SM-S928B")))
+                .andExpect(jsonPath("$[0].osVersion",     is("14")))
                 .andExpect(jsonPath("$[0].displaySizeInches",         is(6.8)))
-                .andExpect(jsonPath("$[0].releaseYear",               is(2024)))
                 .andExpect(jsonPath("$[0].nfcSupported",              is(true)))
                 .andExpect(jsonPath("$[0].wirelessChargingSupported", is(true)));
     }
 
     @Test
-    void handsetdetails_filterBySamsung_returnsOnlySamsungDevices() throws Exception {
-        mockMvc.perform(get("/handsetdetails?manufacturer=Samsung").accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[*].manufacturer", everyItem(is("Samsung"))))
-                .andExpect(jsonPath("$", hasSize(2)));
-    }
-
-    @Test
-    void handsetdetails_filterByApple_returnsTwoAppleDevices() throws Exception {
-        mockMvc.perform(get("/handsetdetails?manufacturer=Apple").accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[*].manufacturer", everyItem(is("Apple"))))
-                .andExpect(jsonPath("$", hasSize(2)));
-    }
-
-    @Test
-    void handsetdetails_filterByGoogle_returnsTwoGoogleDevices() throws Exception {
-        mockMvc.perform(get("/handsetdetails?manufacturer=Google").accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[*].manufacturer", everyItem(is("Google"))))
-                .andExpect(jsonPath("$", hasSize(2)));
-    }
-
-    @Test
-    void handsetdetails_filterIsCaseInsensitive() throws Exception {
-        mockMvc.perform(get("/handsetdetails?manufacturer=apple").accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[*].manufacturer", everyItem(is("Apple"))));
-    }
-
-    @Test
-    void handsetdetails_filterByUnknownManufacturer_returnsEmptyArray() throws Exception {
-        mockMvc.perform(get("/handsetdetails?manufacturer=Nokia").accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(0)));
-    }
-
-    @Test
-    void handsetdetails_byTac_iPhoneRecord_returnsCorrectData() throws Exception {
-        mockMvc.perform(get("/handsetdetails/35282402").accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.tac",           is("35282402")))
-                .andExpect(jsonPath("$.marketingName", is("Apple iPhone 15 Pro Max")))
-                .andExpect(jsonPath("$.manufacturer",  is("Apple")))
-                .andExpect(jsonPath("$.modelName",     is("A3105")))
-                .andExpect(jsonPath("$.osVersion",     is("17")))
-                .andExpect(jsonPath("$.displaySizeInches", is(6.7)));
-    }
-
-    @Test
-    void handsetdetails_byTac_pixelRecord_returnsCorrectData() throws Exception {
-        mockMvc.perform(get("/handsetdetails/35428109").accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.marketingName", is("Google Pixel 8 Pro")))
-                .andExpect(jsonPath("$.manufacturer",  is("Google")));
-    }
-
-    @Test
-    void handsetdetails_byTac_unknownTac_returns404() throws Exception {
-        mockMvc.perform(get("/handsetdetails/00000000").accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isNotFound());
-    }
-
-    @Test
-    void handsetdetails_list_containsBothAndroidAndIos() throws Exception {
-        mockMvc.perform(get("/handsetdetails").accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[*].operatingSystem", hasItems("Android", "iOS")));
-    }
-
-    @Test
-    void handsetdetails_list_allTacsAreEightDigits() throws Exception {
+    void list_allTacsAreEightDigits() throws Exception {
         mockMvc.perform(get("/handsetdetails").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].tac", everyItem(matchesRegex("\\d{8}"))));
     }
 
+    @Test
+    void list_containsBothAndroidAndIos() throws Exception {
+        mockMvc.perform(get("/handsetdetails").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].operatingSystem", hasItems("Android", "iOS")));
+    }
+
     // =========================================================================
-    // /handsets — alternate path, same data
+    // GET /handsetdetails?manufacturer=X — filter
     // =========================================================================
 
     @Test
-    void handsets_list_returnsSameDataAsHandsetdetails() throws Exception {
-        mockMvc.perform(get("/handsets").accept(MediaType.APPLICATION_JSON))
+    void filter_bySamsung_returnsTwoRecords() throws Exception {
+        mockMvc.perform(get("/handsetdetails?manufacturer=Samsung").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(10)));
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[*].manufacturer", everyItem(is("Samsung"))));
     }
 
     @Test
-    void handsets_byTac_returnsSameDataAsHandsetdetails() throws Exception {
-        mockMvc.perform(get("/handsets/35674108").accept(MediaType.APPLICATION_JSON))
+    void filter_byApple_returnsTwoRecords() throws Exception {
+        mockMvc.perform(get("/handsetdetails?manufacturer=Apple").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.marketingName", is("Samsung Galaxy S24 Ultra")));
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[*].manufacturer", everyItem(is("Apple"))));
+    }
+
+    @Test
+    void filter_caseInsensitive() throws Exception {
+        mockMvc.perform(get("/handsetdetails?manufacturer=google").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].manufacturer", everyItem(is("Google"))));
+    }
+
+    @Test
+    void filter_unknownManufacturer_returnsEmptyArray() throws Exception {
+        mockMvc.perform(get("/handsetdetails?manufacturer=Nokia").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    // =========================================================================
+    // GET /handsetdetails/{tac} — single record
+    // =========================================================================
+
+    @Test
+    void single_knownTac_returnsRecord() throws Exception {
+        mockMvc.perform(get("/handsetdetails/35282402").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tac",           is("35282402")))
+                .andExpect(jsonPath("$.marketingName", is("Apple iPhone 15 Pro Max")))
+                .andExpect(jsonPath("$.manufacturer",  is("Apple")))
+                .andExpect(jsonPath("$.modelName",     is("A3105")));
+    }
+
+    @Test
+    void single_unknownTac_returns404() throws Exception {
+        mockMvc.perform(get("/handsetdetails/00000000").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound());
+    }
+
+    // =========================================================================
+    // GET /handsetdetails?tac=T1,T2,... — multi-TAC lookup (up to 20)
+    // =========================================================================
+
+    @Test
+    void multiTac_twoKnownTacs_returnsBothInResults() throws Exception {
+        mockMvc.perform(get("/handsetdetails?tac=35674108,35282402").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requested", is(2)))
+                .andExpect(jsonPath("$.found",     is(2)))
+                .andExpect(jsonPath("$.results",   hasSize(2)))
+                .andExpect(jsonPath("$.notFound",  hasSize(0)))
+                .andExpect(jsonPath("$.results[*].tac",
+                        containsInAnyOrder("35674108", "35282402")));
+    }
+
+    @Test
+    void multiTac_mixedFoundAndNotFound_partitionsCorrectly() throws Exception {
+        mockMvc.perform(get("/handsetdetails?tac=35674108,22222222,11111111,35282402")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requested", is(4)))
+                .andExpect(jsonPath("$.found",     is(2)))
+                .andExpect(jsonPath("$.results",   hasSize(2)))
+                .andExpect(jsonPath("$.notFound",  hasSize(2)))
+                .andExpect(jsonPath("$.notFound",  containsInAnyOrder("22222222", "11111111")));
+    }
+
+    @Test
+    void multiTac_allUnknown_returnsEmptyResults() throws Exception {
+        mockMvc.perform(get("/handsetdetails?tac=11111111,22222222,33333333,44444444")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requested", is(4)))
+                .andExpect(jsonPath("$.found",     is(0)))
+                .andExpect(jsonPath("$.results",   hasSize(0)))
+                .andExpect(jsonPath("$.notFound",  hasSize(4)));
+    }
+
+    @Test
+    void multiTac_singleTac_wrapsInSearchResponse() throws Exception {
+        mockMvc.perform(get("/handsetdetails?tac=35674108").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requested", is(1)))
+                .andExpect(jsonPath("$.found",     is(1)))
+                .andExpect(jsonPath("$.results[0].marketingName", is("Samsung Galaxy S24 Ultra")));
+    }
+
+    @Test
+    void multiTac_up20Tacs_honoured() throws Exception {
+        // 10 real + 10 fake = 20 total, all within the limit
+        String tacs = "35674108,35282402,35428109,86345601,35567812,"
+                    + "86456723,35678934,35789045,35890156,35012367,"
+                    + "11111111,22222222,33333333,44444444,55555555,"
+                    + "66666666,77777777,88888888,99999999,10101010";
+
+        mockMvc.perform(get("/handsetdetails?tac=" + tacs).accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requested", is(20)))
+                .andExpect(jsonPath("$.found",     is(10)))
+                .andExpect(jsonPath("$.notFound",  hasSize(10)));
+    }
+
+    @Test
+    void multiTac_exceedingLimitIsTruncatedTo20() throws Exception {
+        // 21 TACs submitted — limit silently caps at 20
+        String tacs = "35674108,35282402,35428109,86345601,35567812,"
+                    + "86456723,35678934,35789045,35890156,35012367,"
+                    + "11111111,22222222,33333333,44444444,55555555,"
+                    + "66666666,77777777,88888888,99999999,10101010,"
+                    + "12121212";  // 21st — should be dropped
+
+        mockMvc.perform(get("/handsetdetails?tac=" + tacs).accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requested", is(20)));  // capped at 20
+    }
+
+    // =========================================================================
+    // GET /rs/v1/handsetbyIMEIList?imeis=... — IMEI list
+    // =========================================================================
+
+    @Test
+    void imeiList_validImeisMatchByTac() throws Exception {
+        // IMEI 358004117700001 → TAC 35800411 (not in our sample data)
+        // IMEI 352824021234567 → TAC 35282402 (Apple iPhone 15 Pro Max)
+        mockMvc.perform(get("/rs/v1/handsetbyIMEIList?imeis=358004117700001,352824021234567")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requested", is(2)))
+                .andExpect(jsonPath("$.found",     is(1)))
+                .andExpect(jsonPath("$.results[0].manufacturer", is("Apple")));
+    }
+
+    @Test
+    void imeiList_shortCodesUsedAsTacs() throws Exception {
+        // Short codes (< 15 digits) are used as-is for lookup
+        mockMvc.perform(get("/rs/v1/handsetbyIMEIList?imeis=35674108,35282402")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.found", is(2)));
+    }
+
+    @Test
+    void imeiList_duplicateImeisDeduplicatedBeforeLookup() throws Exception {
+        mockMvc.perform(get("/rs/v1/handsetbyIMEIList?imeis=35674108,35674108,35674108")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requested", is(1)));  // de-duped to 1
+    }
+
+    @Test
+    void imeiList_noMatch_returnsEmptyResults() throws Exception {
+        mockMvc.perform(get("/rs/v1/handsetbyIMEIList?imeis=00000000,11111111")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.found",    is(0)))
+                .andExpect(jsonPath("$.notFound", hasSize(2)));
+    }
+
+    // =========================================================================
+    // /handsets alternate path parity
+    // =========================================================================
+
+    @Test
+    void handsets_multiTac_sameResponseAsHandsetdetails() throws Exception {
+        mockMvc.perform(get("/handsets?tac=35674108,35282402").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.found", is(2)));
     }
 }

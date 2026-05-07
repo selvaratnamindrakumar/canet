@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class HttpsDataServiceImpl implements HttpsDataService {
@@ -29,11 +30,6 @@ public class HttpsDataServiceImpl implements HttpsDataService {
     @Value("${external.api.base-url}")
     private String baseUrl;
 
-    /**
-     * Accepting RestTemplateBuilder (rather than RestTemplate) lets
-     * @RestClientTest inject a mock-backed builder without extra @Import wiring,
-     * and lets production code apply timeouts via the builder API.
-     */
     public HttpsDataServiceImpl(RestTemplateBuilder builder) {
         this.restTemplate = builder
                 .setConnectTimeout(Duration.ofSeconds(5))
@@ -61,11 +57,32 @@ public class HttpsDataServiceImpl implements HttpsDataService {
         String url = baseUrl + "/" + id;
         try {
             log.info("Fetching record {} from {}", id, url);
-            // Jackson deserialises a JSON object into a LinkedHashMap, preserving field order
             return restTemplate.getForObject(url, Map.class);
         } catch (RestClientException e) {
             log.error("Failed to fetch record {} from {}: {}", id, url, e.getMessage());
             return null;
+        }
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public TacSearchResult fetchByTacs(List<String> tacs) {
+        String tacParam = tacs.stream().collect(Collectors.joining(","));
+        String url = baseUrl + "?tac=" + tacParam;
+        try {
+            log.info("Multi-TAC lookup ({} TACs) from {}", tacs.size(), url);
+            // The remote endpoint returns TacSearchResponse: {requested, found, results[], notFound[]}
+            Map<String, Object> envelope = restTemplate.getForObject(url, Map.class);
+            if (envelope == null) return new TacSearchResult(List.of(), tacs);
+
+            List<Map<String, Object>> results =
+                    (List<Map<String, Object>>) envelope.getOrDefault("results", List.of());
+            List<String> notFound =
+                    (List<String>) envelope.getOrDefault("notFound", List.of());
+            return new TacSearchResult(results, notFound);
+        } catch (RestClientException e) {
+            log.error("Multi-TAC lookup failed for {}: {}", url, e.getMessage());
+            return new TacSearchResult(List.of(), tacs);
         }
     }
 }
