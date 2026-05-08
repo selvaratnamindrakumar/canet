@@ -1,7 +1,9 @@
 package com.canet.app.controller;
 
+import com.canet.app.config.CaNetProperties;
 import com.canet.app.service.HttpsDataService;
 import com.canet.app.service.HttpsDataService.TacSearchResult;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -15,6 +17,7 @@ import java.util.Map;
 
 import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -22,8 +25,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(DataController.class)
 class DataControllerTest {
 
+    private static final String TEST_URL = "https://test.example.com";
+    private static final List<String> COMPACT_FIELDS =
+            List.of("tac", "marketingName", "manufacturer", "modelName", "operatingSystem");
+
     @Autowired MockMvc mockMvc;
     @MockBean  HttpsDataService dataService;
+    @MockBean  CaNetProperties caNetProperties;
+
+    @BeforeEach
+    void setupMapping() {
+        CaNetProperties.EndpointMapping mapping = new CaNetProperties.EndpointMapping();
+        mapping.setUrl(TEST_URL);
+        mapping.setDefaultEndpoint(true);
+        mapping.setCompactFields(COMPACT_FIELDS);
+        mapping.setDetailFields(List.of("*"));
+        mapping.setLabels(Map.of());
+        when(caNetProperties.findDefault()).thenReturn(mapping);
+    }
 
     // =========================================================================
     // GET / — no search param → load all
@@ -31,7 +50,7 @@ class DataControllerTest {
 
     @Test
     void index_noTacParam_rendersAllRecords() throws Exception {
-        when(dataService.fetchAll()).thenReturn(sampleRows());
+        when(dataService.fetchAll(TEST_URL)).thenReturn(sampleRows());
 
         mockMvc.perform(get("/"))
                 .andExpect(status().isOk())
@@ -43,16 +62,16 @@ class DataControllerTest {
     }
 
     @Test
-    void index_noTacParam_compactColsPassedToTemplate() throws Exception {
-        when(dataService.fetchAll()).thenReturn(sampleRows());
+    void index_noTacParam_compactFieldsPassedToTemplate() throws Exception {
+        when(dataService.fetchAll(TEST_URL)).thenReturn(sampleRows());
 
         mockMvc.perform(get("/"))
-                .andExpect(model().attribute("compactCols", 5));
+                .andExpect(model().attribute("compactFields", hasSize(5)));
     }
 
     @Test
     void index_emptyResult_showsWarning() throws Exception {
-        when(dataService.fetchAll()).thenReturn(List.of());
+        when(dataService.fetchAll(TEST_URL)).thenReturn(List.of());
 
         mockMvc.perform(get("/"))
                 .andExpect(model().attribute("totalCount", 0))
@@ -65,7 +84,7 @@ class DataControllerTest {
 
     @Test
     void index_tacParam_callsFetchByTacs_andPopulatesModel() throws Exception {
-        when(dataService.fetchByTacs(List.of("35674108", "35282402")))
+        when(dataService.fetchByTacs(eq(TEST_URL), eq(List.of("35674108", "35282402"))))
                 .thenReturn(new TacSearchResult(sampleRows(), List.of()));
 
         mockMvc.perform(get("/?tac=35674108,35282402"))
@@ -77,7 +96,7 @@ class DataControllerTest {
 
     @Test
     void index_tacParam_notFoundShownInAlert() throws Exception {
-        when(dataService.fetchByTacs(any()))
+        when(dataService.fetchByTacs(eq(TEST_URL), any()))
                 .thenReturn(new TacSearchResult(List.of(sampleRows().get(0)),
                                                  List.of("22222222", "11111111")));
 
@@ -90,7 +109,7 @@ class DataControllerTest {
 
     @Test
     void index_tacParam_allNotFound_showsZeroResults() throws Exception {
-        when(dataService.fetchByTacs(any()))
+        when(dataService.fetchByTacs(eq(TEST_URL), any()))
                 .thenReturn(new TacSearchResult(List.of(), List.of("00000000")));
 
         mockMvc.perform(get("/?tac=00000000"))
@@ -104,7 +123,7 @@ class DataControllerTest {
 
     @Test
     void apiData_returnsJsonArray() throws Exception {
-        when(dataService.fetchAll()).thenReturn(sampleRows());
+        when(dataService.fetchAll(TEST_URL)).thenReturn(sampleRows());
 
         mockMvc.perform(get("/api/data").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
@@ -119,7 +138,7 @@ class DataControllerTest {
 
     @Test
     void apiDataById_found_returnsRecord() throws Exception {
-        when(dataService.fetchById("35674108")).thenReturn(sampleRows().get(0));
+        when(dataService.fetchById(TEST_URL, "35674108")).thenReturn(sampleRows().get(0));
 
         mockMvc.perform(get("/api/data/35674108").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
@@ -128,7 +147,7 @@ class DataControllerTest {
 
     @Test
     void apiDataById_notFound_returns404() throws Exception {
-        when(dataService.fetchById("00000000")).thenReturn(null);
+        when(dataService.fetchById(TEST_URL, "00000000")).thenReturn(null);
 
         mockMvc.perform(get("/api/data/00000000").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isNotFound());

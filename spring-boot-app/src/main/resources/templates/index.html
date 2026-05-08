@@ -76,7 +76,7 @@
             <div class="card text-bg-secondary">
                 <div class="card-body py-2">
                     <div class="small">Columns</div>
-                    <div class="fs-3 fw-bold" th:text="${#lists.size(columns)}">0</div>
+                    <div class="fs-3 fw-bold" th:text="${#lists.size(allColumns)}">0</div>
                 </div>
             </div>
         </div>
@@ -116,26 +116,21 @@
 
             <thead class="table-dark">
                 <tr>
-                    <!--  Compact columns: first compactCols fields  -->
-                    <th th:each="col, s : ${columns}"
-                        th:if="${s.index < compactCols}"
-                        th:text="${col}"></th>
-                    <!--  Expand toggle column  -->
-                    <th th:if="${#lists.size(columns) > compactCols}"
+                    <th th:each="col : ${compactFields}"
+                        th:text="${labels.containsKey(col) ? labels.get(col) : col}"></th>
+                    <th th:if="${!#lists.isEmpty(detailFields)}"
                         class="text-center" style="width:6rem">Details</th>
                 </tr>
             </thead>
 
             <tbody>
-                <!--  One compact row + one hidden detail row per record  -->
                 <th:block th:each="row, rs : ${rows}">
 
                     <!--  Compact row  -->
                     <tr th:id="${'row-' + rs.index}" class="data-row">
-                        <td th:each="col, s : ${columns}"
-                            th:if="${s.index < compactCols}"
+                        <td th:each="col : ${compactFields}"
                             th:text="${row.get(col)}"></td>
-                        <td th:if="${#lists.size(columns) > compactCols}"
+                        <td th:if="${!#lists.isEmpty(detailFields)}"
                             class="text-center">
                             <button class="btn btn-sm btn-outline-primary py-0"
                                     th:onclick="|toggleDetail(${rs.index})|">▼</button>
@@ -143,17 +138,17 @@
                     </tr>
 
                     <!--  Detail panel (hidden by default)  -->
-                    <tr th:id="${'detail-' + rs.index}"
+                    <tr th:if="${!#lists.isEmpty(detailFields)}"
+                        th:id="${'detail-' + rs.index}"
                         class="detail-row"
                         style="display:none">
-                        <td th:colspan="${compactCols + 1}" class="bg-light p-3">
+                        <td th:colspan="${#lists.size(compactFields) + 1}" class="bg-light p-3">
                             <table class="table table-sm table-bordered mb-0 detail-table">
                                 <tbody>
-                                    <tr th:each="col, s : ${columns}"
-                                        th:if="${s.index >= compactCols}">
+                                    <tr th:each="col : ${detailFields}">
                                         <th class="text-muted fw-normal"
                                             style="width:40%"
-                                            th:text="${col}"></th>
+                                            th:text="${labels.containsKey(col) ? labels.get(col) : col}"></th>
                                         <td class="font-monospace"
                                             th:text="${row.get(col)}"></td>
                                     </tr>
@@ -170,7 +165,7 @@
     <p class="text-muted small mt-2">
         Data sourced via HTTPS ·
         <a href="/api/data" target="_blank">/api/data</a>
-        · Compact view shows first <span th:text="${compactCols}">5</span> columns;
+        · Compact view shows <span th:text="${#lists.size(compactFields)}">5</span> fields;
         click ▼ to expand the remaining fields.
     </p>
 </div>
@@ -201,7 +196,6 @@ function applyFilter() {
         const text  = row.textContent.toLowerCase();
         const match = !term || text.includes(term);
         row.style.display = match ? '' : 'none';
-        // keep detail row visibility in sync
         const idx    = row.id.replace('row-', '');
         const detail = document.getElementById('detail-' + idx);
         if (detail) detail.style.display = match ? detail.style.display : 'none';

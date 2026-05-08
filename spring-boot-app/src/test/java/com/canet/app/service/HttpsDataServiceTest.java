@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.client.RestClientTest;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.client.MockRestServiceServer;
 
 import java.util.List;
@@ -25,7 +24,6 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
  * No real network traffic leaves the JVM — suitable for CI pipelines.
  */
 @RestClientTest(HttpsDataServiceImpl.class)
-@TestPropertySource(properties = "external.api.base-url=https://mock.example.com/handsets")
 class HttpsDataServiceTest {
 
     @Autowired
@@ -42,7 +40,7 @@ class HttpsDataServiceTest {
     }
 
     // -----------------------------------------------------------------------
-    // fetchAll()
+    // fetchAll(url)
     // -----------------------------------------------------------------------
 
     @Test
@@ -50,7 +48,7 @@ class HttpsDataServiceTest {
         server.expect(requestTo(BASE_URL))
               .andRespond(withSuccess(handsetListJson(), MediaType.APPLICATION_JSON));
 
-        List<Map<String, Object>> result = service.fetchAll();
+        List<Map<String, Object>> result = service.fetchAll(BASE_URL);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).containsEntry("tac", "35674108")
@@ -62,11 +60,10 @@ class HttpsDataServiceTest {
 
     @Test
     void fetchAll_picksUpNewFieldsWithoutCodeChange() {
-        // Simulates the API adding a new "bandSupport" field — no code change needed
         server.expect(requestTo(BASE_URL))
               .andRespond(withSuccess(handsetWithNewFieldJson(), MediaType.APPLICATION_JSON));
 
-        List<Map<String, Object>> result = service.fetchAll();
+        List<Map<String, Object>> result = service.fetchAll(BASE_URL);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0)).containsKey("bandSupport");
@@ -79,7 +76,7 @@ class HttpsDataServiceTest {
         server.expect(requestTo(BASE_URL))
               .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
-        assertThat(service.fetchAll()).isEmpty();
+        assertThat(service.fetchAll(BASE_URL)).isEmpty();
         server.verify();
     }
 
@@ -88,7 +85,7 @@ class HttpsDataServiceTest {
         server.expect(requestTo(BASE_URL))
               .andRespond(withServerError());
 
-        assertThat(service.fetchAll()).isEmpty();
+        assertThat(service.fetchAll(BASE_URL)).isEmpty();
         server.verify();
     }
 
@@ -97,12 +94,12 @@ class HttpsDataServiceTest {
         server.expect(requestTo(BASE_URL))
               .andRespond(withServiceUnavailable());
 
-        assertThat(service.fetchAll()).isEmpty();
+        assertThat(service.fetchAll(BASE_URL)).isEmpty();
         server.verify();
     }
 
     // -----------------------------------------------------------------------
-    // fetchById()
+    // fetchById(url, id)
     // -----------------------------------------------------------------------
 
     @Test
@@ -110,7 +107,7 @@ class HttpsDataServiceTest {
         server.expect(requestTo(BASE_URL + "/35674108"))
               .andRespond(withSuccess(singleHandsetJson(), MediaType.APPLICATION_JSON));
 
-        Map<String, Object> record = service.fetchById("35674108");
+        Map<String, Object> record = service.fetchById(BASE_URL, "35674108");
 
         assertThat(record).isNotNull();
         assertThat(record).containsEntry("tac", "35674108")
@@ -124,7 +121,7 @@ class HttpsDataServiceTest {
         server.expect(requestTo(BASE_URL + "/00000000"))
               .andRespond(withResourceNotFound());
 
-        assertThat(service.fetchById("00000000")).isNull();
+        assertThat(service.fetchById(BASE_URL, "00000000")).isNull();
         server.verify();
     }
 

@@ -7,17 +7,26 @@ spring:
 server:
   port: 8080
 
-# External HTTPS API target — swap this URL for any JSON endpoint.
-# The UI, controller and service are fully generic: column headers and cell
-# values are derived from whatever field names the JSON response contains.
-#
-# Examples:
-#   Todos (default):  https://jsonplaceholder.typicode.com/todos
-#   Handset details:  https://api.example.com/handsets          (fields: tac, marketingName, manufacturer, …)
-#   Local mock:       start mock-server then run with --spring.profiles.active=dev
-external:
-  api:
-    base-url: https://jsonplaceholder.typicode.com/todos
+# Endpoint definitions — each entry links a URL to a field mapping.
+# compact-fields: columns shown in the table row.
+# detail-fields:  columns shown in the expandable panel; use ["*"] for all remaining fields.
+# labels:         human-readable column header overrides (key = JSON field name).
+canet:
+  endpoints:
+    - name: todos
+      url: https://jsonplaceholder.typicode.com/todos
+      default-endpoint: true
+      compact-fields:
+        - userId
+        - id
+        - title
+      detail-fields:
+        - "*"
+      labels:
+        userId: "User ID"
+        id: "ID"
+        title: "Title"
+        completed: "Completed"
 
 management:
   endpoints:
@@ -43,6 +52,28 @@ spring:
     activate:
       on-profile: dev
 
-external:
-  api:
-    base-url: http://localhost:8081/handsetdetails
+canet:
+  endpoints:
+    - name: handset-search
+      url: http://localhost:8081/handsetdetails
+      default-endpoint: true
+      compact-fields:
+        - tac
+        - marketingName
+        - manufacturer
+        - modelName
+        - operatingSystem
+      detail-fields:
+        - "*"
+      labels:
+        tac: "TAC"
+        marketingName: "Marketing Name"
+        manufacturer: "Manufacturer"
+        modelName: "Model Name"
+        operatingSystem: "Operating System"
+        osVersion: "OS Version"
+        networkGenerations: "Network Generations"
+        displaySizeInches: "Display (inches)"
+        releaseYear: "Release Year"
+        nfcSupported: "NFC Supported"
+        wirelessChargingSupported: "Wireless Charging"
