@@ -7,13 +7,18 @@ spring:
 server:
   port: 8080
 
-# Endpoint definitions — each entry links a URL to a field mapping.
-# compact-fields: columns shown in the table row.
-# detail-fields:  columns shown in the expandable panel; use ["*"] for all remaining fields.
-# labels:         human-readable column header overrides (key = JSON field name).
+# Endpoint definitions.
+# Each entry links a search type ("handset" or "cell") to a URL, field mapping,
+# display labels, JSON-flattening config, submit delay, and validation rules.
+# compact-fields: shown in the table row.
+# detail-fields:  shown in the expandable panel; ["*"] means all remaining fields.
+# flatten:        flatten nested JSON objects (e.g. b:{c:2} → b-c:2).
+# submit-delay-seconds: seconds the submit button stays disabled on page load.
+# validation-pattern:   client-side regex for each entry (empty = no validation).
 canet:
   endpoints:
     - name: todos
+      type: handset
       url: https://jsonplaceholder.typicode.com/todos
       default-endpoint: true
       compact-fields:
@@ -27,6 +32,33 @@ canet:
         id: "ID"
         title: "Title"
         completed: "Completed"
+      flatten: false
+      flatten-separator: "-"
+      submit-delay-seconds: 0
+      validation-pattern: ""
+      validation-message: ""
+    - name: todos-cell
+      type: cell
+      url: https://jsonplaceholder.typicode.com/todos
+      default-endpoint: false
+      compact-fields:
+        - inputValue
+        - userId
+        - id
+        - title
+      detail-fields:
+        - "*"
+      labels:
+        inputValue: "Input Value"
+        userId: "User ID"
+        id: "ID"
+        title: "Title"
+        completed: "Completed"
+      flatten: false
+      flatten-separator: "-"
+      submit-delay-seconds: 0
+      validation-pattern: ""
+      validation-message: ""
 
 management:
   endpoints:
@@ -55,6 +87,7 @@ spring:
 canet:
   endpoints:
     - name: handset-search
+      type: handset
       url: http://localhost:8081/handsetdetails
       default-endpoint: true
       compact-fields:
@@ -77,3 +110,38 @@ canet:
         releaseYear: "Release Year"
         nfcSupported: "NFC Supported"
         wirelessChargingSupported: "Wireless Charging"
+      flatten: true
+      flatten-separator: "-"
+      submit-delay-seconds: 3
+      validation-pattern: "^\\d{8}$"
+      validation-message: "TAC must be exactly 8 digits"
+    - name: cell-search
+      type: cell
+      url: http://localhost:8081/handsetdetails
+      default-endpoint: false
+      compact-fields:
+        - inputValue
+        - tac
+        - marketingName
+        - manufacturer
+        - modelName
+      detail-fields:
+        - "*"
+      labels:
+        inputValue: "Input IMEI"
+        tac: "TAC"
+        marketingName: "Marketing Name"
+        manufacturer: "Manufacturer"
+        modelName: "Model Name"
+        operatingSystem: "Operating System"
+        osVersion: "OS Version"
+        networkGenerations: "Network Generations"
+        displaySizeInches: "Display (inches)"
+        releaseYear: "Release Year"
+        nfcSupported: "NFC Supported"
+        wirelessChargingSupported: "Wireless Charging"
+      flatten: true
+      flatten-separator: "-"
+      submit-delay-seconds: 3
+      validation-pattern: "^\\d{15}$"
+      validation-message: "IMEI must be exactly 15 digits"

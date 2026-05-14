@@ -24,38 +24,62 @@
 
 <div class="container mt-4">
 
-    <!-- ── Search form ───────────────────────────────────────────────────── -->
+    <!-- ── Search card ───────────────────────────────────────────────────── -->
     <div class="card mb-4 shadow-sm">
         <div class="card-body">
-            <h5 class="card-title mb-3">TAC Search</h5>
-            <form method="get" action="/" class="row g-2 align-items-end">
-                <div class="col-12 col-md-9">
-                    <label class="form-label small text-muted">
-                        Enter up to 20 TAC codes (comma-separated) — or leave blank to load all records
-                    </label>
-                    <input type="text"
-                           name="tac"
-                           class="form-control font-monospace"
-                           th:value="${tacQuery}"
-                           placeholder="e.g. 35674108, 35282402, 35428109"/>
+
+            <!-- Mode selector -->
+            <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+                <h5 class="card-title mb-0">Search</h5>
+                <div class="btn-group" role="group" aria-label="Search type">
+                    <button type="button" id="btnHandset"
+                            class="btn btn-primary"
+                            onclick="selectMode('handset')">Handset</button>
+                    <button type="button" id="btnCell"
+                            class="btn btn-outline-primary"
+                            onclick="selectMode('cell')">Cell</button>
                 </div>
-                <div class="col-auto">
-                    <button type="submit" class="btn btn-primary">Search</button>
-                </div>
-                <div class="col-auto" th:if="${!#strings.isEmpty(tacQuery)}">
-                    <a href="/" class="btn btn-outline-secondary">Clear</a>
-                </div>
-            </form>
-            <div class="form-text mt-1">
-                Example: <code>35674108, 35282402, 35428109</code>
-                &nbsp;·&nbsp;
-                IMEI list via REST: <code>GET /rs/v1/handsetbyIMEIList?imeis=…</code>
+                <span class="text-muted small">
+                    Handset: TAC (8-digit) · Cell: IMEI (15-digit)
+                    &nbsp;·&nbsp; Ctrl+Enter to submit
+                </span>
+            </div>
+
+            <!-- Entry grid -->
+            <div id="entriesContainer" class="mb-2"></div>
+
+            <!-- Row controls -->
+            <div class="d-flex gap-2 mb-3 align-items-center">
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        id="btnAddRow" onclick="addRow()">+ Add Row</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        onclick="clearAll()">Clear All</button>
+                <span class="text-muted small ms-1" id="rowCount"></span>
+            </div>
+
+            <!-- Submit row -->
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+                <button type="button" class="btn btn-primary"
+                        id="btnSubmit" onclick="doSubmit()" disabled>
+                    Search&nbsp;<span id="countdown" class="badge bg-light text-dark"></span>
+                </button>
+                <button type="button" class="btn btn-outline-success btn-sm"
+                        id="btnExport" onclick="exportCsv()"
+                        th:if="${!#lists.isEmpty(rows)}">Export CSV</button>
+            </div>
+
+            <!-- Current search state (when results are shown) -->
+            <div th:unless="${#lists.isEmpty(searchedEntries)}" class="mt-2 text-muted small">
+                Mode: <strong th:text="${mode}"></strong>
+                &nbsp;·&nbsp; Entries:
+                <span class="font-monospace"
+                      th:text="${#strings.listJoin(searchedEntries, ', ')}"></span>
             </div>
         </div>
     </div>
 
     <!-- ── Summary bar ───────────────────────────────────────────────────── -->
-    <div class="row g-3 mb-3">
+    <div th:unless="${#lists.isEmpty(rows)}" class="row g-3 mb-3">
         <div class="col-6 col-md-3">
             <div class="card text-bg-primary">
                 <div class="card-body py-2">
@@ -91,23 +115,33 @@
     </div>
 
     <!-- ── Not-found alert ───────────────────────────────────────────────── -->
-    <div th:if="${!#lists.isEmpty(notFound)}" class="alert alert-warning d-flex gap-2 align-items-start">
-        <span class="fw-semibold">TAC(s) not found:</span>
+    <div th:if="${!#lists.isEmpty(notFound)}"
+         class="alert alert-warning d-flex gap-2 align-items-start">
+        <span class="fw-semibold">Not found:</span>
         <span th:text="${#strings.listJoin(notFound, ', ')}"></span>
     </div>
 
+    <!-- ── Empty-search prompt ───────────────────────────────────────────── -->
+    <div th:if="${#lists.isEmpty(rows) and #lists.isEmpty(searchedEntries)}"
+         class="alert alert-info">
+        Enter TAC codes (Handset) or IMEI numbers (Cell) in the rows above and click
+        <strong>Search</strong>.
+    </div>
+
+    <!-- ── No-results warning ────────────────────────────────────────────── -->
+    <div th:if="${#lists.isEmpty(rows) and !#lists.isEmpty(searchedEntries)}"
+         class="alert alert-warning">
+        No records returned. Check the configured URL and server logs.
+    </div>
+
     <!-- ── Text filter ───────────────────────────────────────────────────── -->
-    <div th:unless="${#lists.isEmpty(rows)}" class="d-flex gap-2 mb-3 align-items-center flex-wrap">
+    <div th:unless="${#lists.isEmpty(rows)}"
+         class="d-flex gap-2 mb-3 align-items-center flex-wrap">
         <input id="filterInput" type="text" class="form-control w-auto flex-grow-1"
                placeholder="Filter visible rows…" oninput="applyFilter()"/>
         <span id="matchCount" class="text-muted small"></span>
         <button class="btn btn-sm btn-outline-secondary" onclick="expandAll()">Expand all</button>
         <button class="btn btn-sm btn-outline-secondary" onclick="collapseAll()">Collapse all</button>
-    </div>
-
-    <!-- ── Empty state ───────────────────────────────────────────────────── -->
-    <div th:if="${#lists.isEmpty(rows)}" class="alert alert-warning">
-        No records returned. Check the configured URL and server logs.
     </div>
 
     <!-- ── Results table ─────────────────────────────────────────────────── -->
@@ -145,9 +179,10 @@
                         <td th:colspan="${#lists.size(compactFields) + 1}" class="bg-light p-3">
                             <table class="table table-sm table-bordered mb-0 detail-table">
                                 <tbody>
-                                    <tr th:each="col : ${detailFields}">
-                                        <th class="text-muted fw-normal"
-                                            style="width:40%"
+                                    <!-- Skip rows where the value is null or blank -->
+                                    <tr th:each="col : ${detailFields}"
+                                        th:if="${row.get(col) != null and !#strings.isEmpty(row.get(col).toString())}">
+                                        <th class="text-muted fw-normal" style="width:40%"
                                             th:text="${labels.containsKey(col) ? labels.get(col) : col}"></th>
                                         <td class="font-monospace"
                                             th:text="${row.get(col)}"></td>
@@ -162,19 +197,225 @@
         </table>
     </div>
 
-    <p class="text-muted small mt-2">
+    <!-- ── Footer ────────────────────────────────────────────────────────── -->
+    <p th:unless="${#lists.isEmpty(rows)}" class="text-muted small mt-2">
         Data sourced via HTTPS ·
         <a href="/api/data" target="_blank">/api/data</a>
         · Compact view shows <span th:text="${#lists.size(compactFields)}">5</span> fields;
-        click ▼ to expand the remaining fields.
+        click ▼ to expand remaining fields.
     </p>
-</div>
+
+</div><!-- /container -->
+
+<!-- ── Inline JS config from server ─────────────────────────────────────── -->
+<script th:inline="javascript">
+/*<![CDATA[*/
+const INIT_MODE        = /*[[${mode}]]*/ 'handset';
+const SEARCHED_ENTRIES = /*[[${searchedEntries}]]*/ [];
+const ENDPOINT_CONFIGS = /*[[${endpointConfigs}]]*/ {};
+const MAX_ROWS         = 20;
+/*]]>*/
+</script>
 
 <script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let currentMode = INIT_MODE;
+let rowIndex    = 0;
+
+// ─── Initialise on load ───────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+    applyModeButtons(currentMode);
+
+    if (SEARCHED_ENTRIES.length > 0) {
+        SEARCHED_ENTRIES.forEach(e => addRow(e));
+    } else {
+        addRow();
+    }
+
+    const cfg = ENDPOINT_CONFIGS[currentMode] || {};
+    startCountdown(cfg.delay || 0);
+    updatePlaceholders();
+});
+
+// ─── Mode selector ────────────────────────────────────────────────────────────
+function selectMode(mode) {
+    if (mode === currentMode) return;
+    currentMode = mode;
+    applyModeButtons(mode);
+    clearAll();
+    addRow();
+    updatePlaceholders();
+    const cfg = ENDPOINT_CONFIGS[mode] || {};
+    startCountdown(cfg.delay || 0);
+    // Clear validation state on mode change
+    document.querySelectorAll('.entry-input').forEach(resetValidation);
+}
+
+function applyModeButtons(mode) {
+    document.getElementById('btnHandset').className =
+        'btn ' + (mode === 'handset' ? 'btn-primary' : 'btn-outline-primary');
+    document.getElementById('btnCell').className =
+        'btn ' + (mode === 'cell'    ? 'btn-primary' : 'btn-outline-primary');
+}
+
+// ─── Row management ───────────────────────────────────────────────────────────
+function addRow(value) {
+    const container = document.getElementById('entriesContainer');
+    if (container.children.length >= MAX_ROWS) return;
+
+    const cfg = ENDPOINT_CONFIGS[currentMode] || {};
+    const ph  = cfg.placeholder || 'Enter value';
+    const idx = rowIndex++;
+    const num = container.children.length + 1;
+
+    const div = document.createElement('div');
+    div.className   = 'input-row d-flex gap-2 mb-2 align-items-start';
+    div.dataset.idx = idx;
+    div.innerHTML   = `
+        <span class="row-num text-muted small pt-2" style="min-width:2rem;text-align:right">${num}.</span>
+        <div class="flex-grow-1">
+            <input type="text"
+                   class="form-control form-control-sm font-monospace entry-input"
+                   placeholder="${escHtml(ph)}"
+                   value="${escHtml(value || '')}"
+                   oninput="onEntryInput(this)"
+                   onblur="validateRow(this, true)"/>
+            <div class="invalid-feedback"></div>
+        </div>
+        <button type="button" class="btn btn-outline-danger btn-sm"
+                onclick="removeRow(this)" title="Remove row">✕</button>`;
+    container.appendChild(div);
+    updateRowCount();
+}
+
+function removeRow(btn) {
+    btn.closest('.input-row').remove();
+    renumberRows();
+    updateRowCount();
+    if (document.querySelectorAll('.input-row').length === 0) addRow();
+}
+
+function clearAll() {
+    document.getElementById('entriesContainer').innerHTML = '';
+    rowIndex = 0;
+    updateRowCount();
+}
+
+function renumberRows() {
+    document.querySelectorAll('.input-row').forEach((row, i) => {
+        const span = row.querySelector('.row-num');
+        if (span) span.textContent = (i + 1) + '.';
+    });
+}
+
+function updateRowCount() {
+    const n = document.querySelectorAll('.input-row').length;
+    document.getElementById('rowCount').textContent = n + ' / ' + MAX_ROWS + ' rows';
+    document.getElementById('btnAddRow').disabled = n >= MAX_ROWS;
+}
+
+function updatePlaceholders() {
+    const cfg = ENDPOINT_CONFIGS[currentMode] || {};
+    const ph  = cfg.placeholder || 'Enter value';
+    document.querySelectorAll('.entry-input').forEach(i => i.placeholder = ph);
+}
+
+// ─── Validation ───────────────────────────────────────────────────────────────
+function validateRow(input, showValid) {
+    const val = input.value.trim();
+    if (!val) { resetValidation(input); return true; }
+
+    const cfg     = ENDPOINT_CONFIGS[currentMode] || {};
+    const pattern = cfg.pattern || '';
+    const message = cfg.message || 'Invalid input';
+
+    if (pattern && !new RegExp(pattern).test(val)) {
+        input.classList.add('is-invalid');
+        input.classList.remove('is-valid');
+        input.nextElementSibling.textContent = message;
+        return false;
+    }
+    if (showValid) {
+        input.classList.remove('is-invalid');
+        input.classList.add('is-valid');
+        input.nextElementSibling.textContent = '';
+    }
+    return true;
+}
+
+function validateAll() {
+    let ok = true;
+    document.querySelectorAll('.entry-input').forEach(inp => {
+        if (inp.value.trim() && !validateRow(inp, true)) ok = false;
+    });
+    return ok;
+}
+
+function resetValidation(input) {
+    input.classList.remove('is-valid', 'is-invalid');
+    const fb = input.nextElementSibling;
+    if (fb) fb.textContent = '';
+}
+
+function onEntryInput(input) {
+    // Show errors immediately; clear "valid" state so green doesn't persist while typing
+    input.classList.remove('is-valid');
+    if (input.value.trim()) validateRow(input, false);
+    else resetValidation(input);
+}
+
+// ─── Submit ───────────────────────────────────────────────────────────────────
+function doSubmit() {
+    if (!validateAll()) return;
+    const values = Array.from(document.querySelectorAll('.entry-input'))
+        .map(i => i.value.trim())
+        .filter(v => v.length > 0);
+    if (values.length === 0) return;
+    const p = new URLSearchParams({ mode: currentMode, entries: values.join(',') });
+    window.location.href = '/?' + p.toString();
+}
+
+function startCountdown(seconds) {
+    const btn  = document.getElementById('btnSubmit');
+    const span = document.getElementById('countdown');
+    btn.disabled       = seconds > 0;
+    span.textContent   = seconds > 0 ? seconds : '';
+    if (seconds <= 0) return;
+
+    let remaining = seconds;
+    const timer = setInterval(() => {
+        remaining--;
+        span.textContent = remaining > 0 ? remaining : '';
+        if (remaining <= 0) {
+            clearInterval(timer);
+            btn.disabled = false;
+        }
+    }, 1000);
+}
+
+// ─── Keyboard shortcut ────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+    if (e.ctrlKey && e.key === 'Enter') {
+        const btn = document.getElementById('btnSubmit');
+        if (!btn.disabled) doSubmit();
+    }
+});
+
+// ─── CSV export ───────────────────────────────────────────────────────────────
+function exportCsv() {
+    const values = Array.from(document.querySelectorAll('.entry-input'))
+        .map(i => i.value.trim()).filter(v => v);
+    const p = new URLSearchParams({ mode: currentMode });
+    if (values.length) p.set('entries', values.join(','));
+    window.location.href = '/api/data/export.csv?' + p.toString();
+}
+
+// ─── Results table helpers ────────────────────────────────────────────────────
 function toggleDetail(idx) {
     const detail = document.getElementById('detail-' + idx);
     const btn    = document.querySelector('#row-' + idx + ' button');
-    const open   = detail.style.display === '';
+    if (!detail) return;
+    const open = detail.style.display === '';
     detail.style.display = open ? 'none' : '';
     if (btn) btn.textContent = open ? '▼' : '▲';
 }
@@ -193,8 +434,7 @@ function applyFilter() {
     const term = document.getElementById('filterInput').value.toLowerCase();
     let visible = 0;
     document.querySelectorAll('#dataTable tbody .data-row').forEach(row => {
-        const text  = row.textContent.toLowerCase();
-        const match = !term || text.includes(term);
+        const match = !term || row.textContent.toLowerCase().includes(term);
         row.style.display = match ? '' : 'none';
         const idx    = row.id.replace('row-', '');
         const detail = document.getElementById('detail-' + idx);
@@ -204,6 +444,15 @@ function applyFilter() {
     const total = document.querySelectorAll('.data-row').length;
     document.getElementById('matchCount').textContent =
         term ? visible + ' of ' + total + ' shown' : '';
+}
+
+// ─── Utility ──────────────────────────────────────────────────────────────────
+function escHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 </script>
 
