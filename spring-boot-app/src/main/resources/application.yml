@@ -109,11 +109,12 @@ canet:
         modelName: "Model Name"
         operatingSystem: "Operating System"
         osVersion: "OS Version"
-        networkGenerations: "Network Generations"
+        network-generations: "Network Generations"
+        network-type: "Network Type"
         displaySizeInches: "Display (inches)"
         releaseYear: "Release Year"
-        nfcSupported: "NFC Supported"
-        wirelessChargingSupported: "Wireless Charging"
+        capabilities-nfc: "NFC Supported"
+        capabilities-wirelessCharging: "Wireless Charging"
       flatten: true
       flatten-separator: "-"
       submit-delay-seconds: 3
@@ -140,11 +141,12 @@ canet:
         modelName: "Model Name"
         operatingSystem: "Operating System"
         osVersion: "OS Version"
-        networkGenerations: "Network Generations"
+        network-generations: "Network Generations"
+        network-type: "Network Type"
         displaySizeInches: "Display (inches)"
         releaseYear: "Release Year"
-        nfcSupported: "NFC Supported"
-        wirelessChargingSupported: "Wireless Charging"
+        capabilities-nfc: "NFC Supported"
+        capabilities-wirelessCharging: "Wireless Charging"
       flatten: true
       flatten-separator: "-"
       submit-delay-seconds: 3
