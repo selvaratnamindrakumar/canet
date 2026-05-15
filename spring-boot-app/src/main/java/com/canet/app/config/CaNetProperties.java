@@ -52,6 +52,8 @@ public class CaNetProperties {
         private String validationPattern = "";
         /** Error message shown when validationPattern is not satisfied. */
         private String validationMessage = "Invalid input";
+        /** Maximum number of entries accepted per search (HANDSET_SEARCH_CONFIG / CELL_SEARCH_CONFIG). */
+        private int maxEntries = 20;
 
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
@@ -88,5 +90,8 @@ public class CaNetProperties {
 
         public String getValidationMessage() { return validationMessage; }
         public void setValidationMessage(String validationMessage) { this.validationMessage = validationMessage; }
+
+        public int getMaxEntries() { return maxEntries; }
+        public void setMaxEntries(int maxEntries) { this.maxEntries = maxEntries; }
     }
 }

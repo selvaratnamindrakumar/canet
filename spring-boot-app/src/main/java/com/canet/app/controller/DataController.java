@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
 @Controller
 public class DataController {
 
-    private static final int MAX_ENTRIES = 20;
+    private static final int DEFAULT_MAX_ENTRIES = 20;
 
     private final HttpsDataService dataService;
     private final CaNetProperties caNetProperties;
@@ -45,10 +45,13 @@ public class DataController {
         List<String>               notFound = List.of();
         List<String>               searched = List.of();
 
+        int maxEnt = (mapping != null && mapping.getMaxEntries() > 0)
+                ? mapping.getMaxEntries() : DEFAULT_MAX_ENTRIES;
+
         if (entries != null && !entries.isBlank()) {
             searched = Arrays.stream(entries.split(","))
                     .map(String::trim).filter(s -> !s.isBlank())
-                    .limit(MAX_ENTRIES)
+                    .limit(maxEnt)
                     .collect(Collectors.toList());
 
             if ("cell".equals(mode)) {
@@ -115,7 +118,8 @@ public class DataController {
             cfg.put("pattern",     ep.getValidationPattern());
             cfg.put("message",     ep.getValidationMessage());
             cfg.put("placeholder", "cell".equals(ep.getType())
-                    ? "Enter IMEI (15 digits)" : "Enter TAC (8 digits)");
+                    ? "Enter one IMEI (15 digits) per line" : "Enter one TAC (8 digits) per line");
+            cfg.put("maxEntries", ep.getMaxEntries() > 0 ? ep.getMaxEntries() : DEFAULT_MAX_ENTRIES);
             map.put(ep.getType(), cfg);
         }
         return map;

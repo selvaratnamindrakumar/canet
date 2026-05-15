@@ -3,18 +3,32 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <title>CaNet — Handset Details Viewer</title>
+    <title>NEO — CaNet Handset Details</title>
     <link rel="stylesheet"
           href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
           integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
           crossorigin="anonymous"/>
     <link rel="stylesheet" th:href="@{/css/style.css}"/>
+    <style>
+        #entryTextarea {
+            resize: none;
+            overflow: hidden;
+            min-height: 120px;
+            font-size: .875rem;
+            line-height: 1.6;
+        }
+        .neo-brand { letter-spacing: .12em; }
+    </style>
 </head>
-<body>
+<body class="bg-light">
 
-<nav class="navbar navbar-dark bg-dark">
+<nav class="navbar navbar-dark bg-dark shadow-sm">
     <div class="container-fluid">
-        <span class="navbar-brand fw-bold">CaNet — Handset Details</span>
+        <span class="navbar-brand fw-bold neo-brand">
+            <span class="text-warning fs-5">NEO</span>
+            <span class="text-white-50 mx-2">|</span>
+            CaNet Handset Details
+        </span>
         <div class="d-flex gap-3 align-items-center">
             <a href="/" class="nav-link text-white active">Search</a>
             <a href="/about" class="nav-link text-white-50">Why Spring Boot?</a>
@@ -24,13 +38,24 @@
 
 <div class="container mt-4">
 
+    <!-- ── NEO page heading ───────────────────────────────────────────────── -->
+    <div class="mb-4">
+        <h1 class="fw-bold mb-0" style="font-size:2rem;letter-spacing:.08em">
+            <span class="text-warning">NEO</span>
+            <span class="text-dark ms-2 fs-4 fw-normal">Network Equipment Observer</span>
+        </h1>
+        <p class="text-muted small mb-0 mt-1">
+            Search handset details by TAC or IMEI · JSON flattening · CSV export
+        </p>
+    </div>
+
     <!-- ── Search card ───────────────────────────────────────────────────── -->
     <div class="card mb-4 shadow-sm">
         <div class="card-body">
 
             <!-- Mode selector -->
             <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
-                <h5 class="card-title mb-0">Search</h5>
+                <h5 class="card-title mb-0 me-1">Search</h5>
                 <div class="btn-group" role="group" aria-label="Search type">
                     <button type="button" id="btnHandset"
                             class="btn btn-primary"
@@ -40,38 +65,49 @@
                             onclick="selectMode('cell')">Cell</button>
                 </div>
                 <span class="text-muted small">
-                    Handset: TAC (8-digit) · Cell: IMEI (15-digit)
+                    Handset: TAC (8-digit) &nbsp;·&nbsp; Cell: IMEI (15-digit)
                     &nbsp;·&nbsp; Ctrl+Enter to submit
                 </span>
             </div>
 
-            <!-- Entry grid -->
-            <div id="entriesContainer" class="mb-2"></div>
+            <!-- Expandable textarea — one entry per line -->
+            <label class="form-label small text-muted mb-1" id="textareaLabel">
+                Enter one TAC per line (up to <span id="maxEntriesLabel">20</span> entries)
+            </label>
+            <textarea id="entryTextarea"
+                      class="form-control font-monospace"
+                      placeholder="Enter one TAC (8 digits) per line…"
+                      spellcheck="false"
+                      autocomplete="off"
+                      oninput="onTextareaInput(this)"
+                      onblur="validateTextarea(true)"></textarea>
 
-            <!-- Row controls -->
-            <div class="d-flex gap-2 mb-3 align-items-center">
-                <button type="button" class="btn btn-sm btn-outline-secondary"
-                        id="btnAddRow" onclick="addRow()">+ Add Row</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary"
-                        onclick="clearAll()">Clear All</button>
-                <span class="text-muted small ms-1" id="rowCount"></span>
+            <!-- Entry count + Ctrl+Enter hint -->
+            <div class="d-flex justify-content-between mt-1 mb-2">
+                <span class="text-muted small" id="entryCount">0 / 20 entries</span>
+                <span class="text-muted small">One entry per line &nbsp;·&nbsp; Ctrl+Enter to search</span>
             </div>
 
-            <!-- Submit row -->
+            <!-- Validation summary -->
+            <div id="validationSummary" class="mb-3"></div>
+
+            <!-- Action buttons -->
             <div class="d-flex gap-2 align-items-center flex-wrap">
                 <button type="button" class="btn btn-primary"
                         id="btnSubmit" onclick="doSubmit()" disabled>
                     Search&nbsp;<span id="countdown" class="badge bg-light text-dark"></span>
                 </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm"
+                        onclick="clearTextarea()">Clear</button>
                 <button type="button" class="btn btn-outline-success btn-sm"
                         id="btnExport" onclick="exportCsv()"
                         th:if="${!#lists.isEmpty(rows)}">Export CSV</button>
             </div>
 
-            <!-- Current search state (when results are shown) -->
-            <div th:unless="${#lists.isEmpty(searchedEntries)}" class="mt-2 text-muted small">
+            <!-- Current search echo (visible when results are shown) -->
+            <div th:unless="${#lists.isEmpty(searchedEntries)}" class="mt-3 pt-2 border-top text-muted small">
                 Mode: <strong th:text="${mode}"></strong>
-                &nbsp;·&nbsp; Entries:
+                &nbsp;·&nbsp; Searched:
                 <span class="font-monospace"
                       th:text="${#strings.listJoin(searchedEntries, ', ')}"></span>
             </div>
@@ -117,14 +153,14 @@
     <!-- ── Not-found alert ───────────────────────────────────────────────── -->
     <div th:if="${!#lists.isEmpty(notFound)}"
          class="alert alert-warning d-flex gap-2 align-items-start">
-        <span class="fw-semibold">Not found:</span>
+        <strong>Not found:</strong>
         <span th:text="${#strings.listJoin(notFound, ', ')}"></span>
     </div>
 
     <!-- ── Empty-search prompt ───────────────────────────────────────────── -->
     <div th:if="${#lists.isEmpty(rows) and #lists.isEmpty(searchedEntries)}"
          class="alert alert-info">
-        Enter TAC codes (Handset) or IMEI numbers (Cell) in the rows above and click
+        Enter TAC codes (Handset) or IMEI numbers (Cell) in the text area above and click
         <strong>Search</strong>.
     </div>
 
@@ -160,7 +196,6 @@
             <tbody>
                 <th:block th:each="row, rs : ${rows}">
 
-                    <!--  Compact row  -->
                     <tr th:id="${'row-' + rs.index}" class="data-row">
                         <td th:each="col : ${compactFields}"
                             th:text="${row.get(col)}"></td>
@@ -171,7 +206,6 @@
                         </td>
                     </tr>
 
-                    <!--  Detail panel (hidden by default)  -->
                     <tr th:if="${!#lists.isEmpty(detailFields)}"
                         th:id="${'detail-' + rs.index}"
                         class="detail-row"
@@ -179,7 +213,6 @@
                         <td th:colspan="${#lists.size(compactFields) + 1}" class="bg-light p-3">
                             <table class="table table-sm table-bordered mb-0 detail-table">
                                 <tbody>
-                                    <!-- Skip rows where the value is null or blank -->
                                     <tr th:each="col : ${detailFields}"
                                         th:if="${row.get(col) != null and !#strings.isEmpty(row.get(col).toString())}">
                                         <th class="text-muted fw-normal" style="width:40%"
@@ -207,189 +240,225 @@
 
 </div><!-- /container -->
 
-<!-- ── Inline JS config from server ─────────────────────────────────────── -->
+<!-- ── Server-injected config ──────────────────────────────────────────────── -->
 <script th:inline="javascript">
 /*<![CDATA[*/
 const INIT_MODE        = /*[[${mode}]]*/ 'handset';
 const SEARCHED_ENTRIES = /*[[${searchedEntries}]]*/ [];
 const ENDPOINT_CONFIGS = /*[[${endpointConfigs}]]*/ {};
-const MAX_ROWS         = 20;
 /*]]>*/
 </script>
 
 <script>
 // ─── State ───────────────────────────────────────────────────────────────────
 let currentMode = INIT_MODE;
-let rowIndex    = 0;
 
-// ─── Initialise on load ───────────────────────────────────────────────────────
+// ─── Init ─────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
-    applyModeButtons(currentMode);
+    applyModeUI(currentMode);
 
+    const textarea = document.getElementById('entryTextarea');
     if (SEARCHED_ENTRIES.length > 0) {
-        SEARCHED_ENTRIES.forEach(e => addRow(e));
+        textarea.value = SEARCHED_ENTRIES.join('\n');
+        autoResize(textarea);
+        validateTextarea(false);
+        updateEntryCount();
     } else {
-        addRow();
+        updateEntryCount();
     }
 
     const cfg = ENDPOINT_CONFIGS[currentMode] || {};
     startCountdown(cfg.delay || 0);
-    updatePlaceholders();
 });
 
 // ─── Mode selector ────────────────────────────────────────────────────────────
 function selectMode(mode) {
     if (mode === currentMode) return;
     currentMode = mode;
-    applyModeButtons(mode);
-    clearAll();
-    addRow();
-    updatePlaceholders();
+    applyModeUI(mode);
+
+    const textarea = document.getElementById('entryTextarea');
+    textarea.value = '';
+    autoResize(textarea);
+    clearValidationSummary();
+    updateEntryCount();
+
     const cfg = ENDPOINT_CONFIGS[mode] || {};
     startCountdown(cfg.delay || 0);
-    // Clear validation state on mode change
-    document.querySelectorAll('.entry-input').forEach(resetValidation);
 }
 
-function applyModeButtons(mode) {
+function applyModeUI(mode) {
+    const cfg = ENDPOINT_CONFIGS[mode] || {};
+    const max = cfg.maxEntries || 20;
+    const ph  = cfg.placeholder || 'Enter one value per line';
+
     document.getElementById('btnHandset').className =
         'btn ' + (mode === 'handset' ? 'btn-primary' : 'btn-outline-primary');
     document.getElementById('btnCell').className =
-        'btn ' + (mode === 'cell'    ? 'btn-primary' : 'btn-outline-primary');
+        'btn ' + (mode === 'cell' ? 'btn-primary' : 'btn-outline-primary');
+
+    document.getElementById('entryTextarea').placeholder = ph;
+    document.getElementById('maxEntriesLabel').textContent = max;
+    document.getElementById('textareaLabel').firstChild.textContent =
+        'Enter one ' + (mode === 'cell' ? 'IMEI' : 'TAC') +
+        ' per line (up to ';
+    updateEntryCount();
 }
 
-// ─── Row management ───────────────────────────────────────────────────────────
-function addRow(value) {
-    const container = document.getElementById('entriesContainer');
-    if (container.children.length >= MAX_ROWS) return;
-
-    const cfg = ENDPOINT_CONFIGS[currentMode] || {};
-    const ph  = cfg.placeholder || 'Enter value';
-    const idx = rowIndex++;
-    const num = container.children.length + 1;
-
-    const div = document.createElement('div');
-    div.className   = 'input-row d-flex gap-2 mb-2 align-items-start';
-    div.dataset.idx = idx;
-    div.innerHTML   = `
-        <span class="row-num text-muted small pt-2" style="min-width:2rem;text-align:right">${num}.</span>
-        <div class="flex-grow-1">
-            <input type="text"
-                   class="form-control form-control-sm font-monospace entry-input"
-                   placeholder="${escHtml(ph)}"
-                   value="${escHtml(value || '')}"
-                   oninput="onEntryInput(this)"
-                   onblur="validateRow(this, true)"/>
-            <div class="invalid-feedback"></div>
-        </div>
-        <button type="button" class="btn btn-outline-danger btn-sm"
-                onclick="removeRow(this)" title="Remove row">✕</button>`;
-    container.appendChild(div);
-    updateRowCount();
+// ─── Textarea auto-resize ─────────────────────────────────────────────────────
+function autoResize(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.max(120, textarea.scrollHeight) + 'px';
 }
 
-function removeRow(btn) {
-    btn.closest('.input-row').remove();
-    renumberRows();
-    updateRowCount();
-    if (document.querySelectorAll('.input-row').length === 0) addRow();
+function onTextareaInput(textarea) {
+    autoResize(textarea);
+    updateEntryCount();
+    // Show errors live; don't add green "valid" badge until blur or submit
+    validateTextarea(false);
 }
 
-function clearAll() {
-    document.getElementById('entriesContainer').innerHTML = '';
-    rowIndex = 0;
-    updateRowCount();
+// ─── Entry count ──────────────────────────────────────────────────────────────
+function updateEntryCount() {
+    const cfg   = ENDPOINT_CONFIGS[currentMode] || {};
+    const max   = cfg.maxEntries || 20;
+    const lines = getNonEmptyLines();
+    const n     = Math.min(lines.length, max);
+    const el    = document.getElementById('entryCount');
+    el.textContent = n + ' / ' + max + ' entries';
+    el.className   = 'small ' + (n >= max ? 'text-warning fw-semibold' : 'text-muted');
 }
 
-function renumberRows() {
-    document.querySelectorAll('.input-row').forEach((row, i) => {
-        const span = row.querySelector('.row-num');
-        if (span) span.textContent = (i + 1) + '.';
-    });
-}
-
-function updateRowCount() {
-    const n = document.querySelectorAll('.input-row').length;
-    document.getElementById('rowCount').textContent = n + ' / ' + MAX_ROWS + ' rows';
-    document.getElementById('btnAddRow').disabled = n >= MAX_ROWS;
-}
-
-function updatePlaceholders() {
-    const cfg = ENDPOINT_CONFIGS[currentMode] || {};
-    const ph  = cfg.placeholder || 'Enter value';
-    document.querySelectorAll('.entry-input').forEach(i => i.placeholder = ph);
+function getNonEmptyLines() {
+    return document.getElementById('entryTextarea')
+        .value.split('\n')
+        .map(l => l.trim())
+        .filter(l => l.length > 0);
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────
-function validateRow(input, showValid) {
-    const val = input.value.trim();
-    if (!val) { resetValidation(input); return true; }
-
+function validateTextarea(showValid) {
     const cfg     = ENDPOINT_CONFIGS[currentMode] || {};
     const pattern = cfg.pattern || '';
     const message = cfg.message || 'Invalid input';
+    const max     = cfg.maxEntries || 20;
+    const allLines = document.getElementById('entryTextarea')
+        .value.split('\n').map(l => l.trim());
 
-    if (pattern && !new RegExp(pattern).test(val)) {
-        input.classList.add('is-invalid');
-        input.classList.remove('is-valid');
-        input.nextElementSibling.textContent = message;
-        return false;
-    }
-    if (showValid) {
-        input.classList.remove('is-invalid');
-        input.classList.add('is-valid');
-        input.nextElementSibling.textContent = '';
-    }
-    return true;
-}
+    const errors = [];
+    let validCount = 0;
 
-function validateAll() {
-    let ok = true;
-    document.querySelectorAll('.entry-input').forEach(inp => {
-        if (inp.value.trim() && !validateRow(inp, true)) ok = false;
+    allLines.forEach((line, i) => {
+        if (!line) return;  // skip blank lines
+
+        const rowNum = i + 1;
+
+        if (validCount >= max) {
+            errors.push({
+                row: rowNum, val: line,
+                msg: 'Exceeds the limit of ' + max + ' entries — this row will be ignored'
+            });
+            return;
+        }
+
+        if (pattern) {
+            const re = new RegExp(pattern);
+            if (!re.test(line)) {
+                // Produce a helpful specific message
+                const nonDigits = line.replace(/\d/g, '');
+                let detail;
+                if (nonDigits.length > 0) {
+                    detail = 'contains non-digit character' + (nonDigits.length > 1 ? 's' : '') +
+                             ' (' + escHtml(nonDigits.substring(0, 6)) + ')';
+                } else {
+                    const expected = extractExpectedLength(pattern);
+                    detail = expected
+                        ? 'found ' + line.length + ' digit' + (line.length === 1 ? '' : 's') +
+                          ', need ' + expected
+                        : message;
+                }
+                errors.push({ row: rowNum, val: line, msg: message + ' — ' + detail });
+                return;
+            }
+        }
+        validCount++;
     });
-    return ok;
+
+    const textarea = document.getElementById('entryTextarea');
+    const summary  = document.getElementById('validationSummary');
+
+    if (errors.length > 0) {
+        textarea.classList.add('is-invalid');
+        textarea.classList.remove('is-valid');
+        summary.innerHTML =
+            '<div class="alert alert-danger py-2 mb-0">' +
+            '<strong class="d-block mb-1">⚠ Validation errors:</strong>' +
+            '<ul class="mb-0 ps-3">' +
+            errors.map(e =>
+                '<li>Row ' + e.row + ' <code>' + escHtml(truncate(e.val, 20)) + '</code>: ' +
+                escHtml(e.msg) + '</li>'
+            ).join('') +
+            '</ul></div>';
+    } else if (showValid && validCount > 0) {
+        textarea.classList.remove('is-invalid');
+        textarea.classList.add('is-valid');
+        summary.innerHTML =
+            '<div class="text-success small">✓ ' + validCount + ' valid ' +
+            (validCount === 1 ? 'entry' : 'entries') + ' ready to search</div>';
+    } else {
+        textarea.classList.remove('is-invalid', 'is-valid');
+        clearValidationSummary();
+    }
+
+    return errors.length === 0;
 }
 
-function resetValidation(input) {
-    input.classList.remove('is-valid', 'is-invalid');
-    const fb = input.nextElementSibling;
-    if (fb) fb.textContent = '';
+function clearValidationSummary() {
+    const s = document.getElementById('validationSummary');
+    s.innerHTML = '';
+    const ta = document.getElementById('entryTextarea');
+    ta.classList.remove('is-valid', 'is-invalid');
 }
 
-function onEntryInput(input) {
-    // Show errors immediately; clear "valid" state so green doesn't persist while typing
-    input.classList.remove('is-valid');
-    if (input.value.trim()) validateRow(input, false);
-    else resetValidation(input);
+// Attempt to extract the required digit count from a pattern like ^\d{8}$
+function extractExpectedLength(pattern) {
+    const m = pattern.match(/\\d\{(\d+)\}/);
+    return m ? m[1] : null;
 }
 
 // ─── Submit ───────────────────────────────────────────────────────────────────
 function doSubmit() {
-    if (!validateAll()) return;
-    const values = Array.from(document.querySelectorAll('.entry-input'))
-        .map(i => i.value.trim())
-        .filter(v => v.length > 0);
+    if (!validateTextarea(true)) return;
+
+    const cfg    = ENDPOINT_CONFIGS[currentMode] || {};
+    const max    = cfg.maxEntries || 20;
+    const values = getNonEmptyLines().slice(0, max);
     if (values.length === 0) return;
+
     const p = new URLSearchParams({ mode: currentMode, entries: values.join(',') });
     window.location.href = '/?' + p.toString();
 }
 
+function clearTextarea() {
+    document.getElementById('entryTextarea').value = '';
+    autoResize(document.getElementById('entryTextarea'));
+    clearValidationSummary();
+    updateEntryCount();
+}
+
+// ─── Submit countdown ─────────────────────────────────────────────────────────
 function startCountdown(seconds) {
     const btn  = document.getElementById('btnSubmit');
     const span = document.getElementById('countdown');
-    btn.disabled       = seconds > 0;
-    span.textContent   = seconds > 0 ? seconds : '';
+    btn.disabled     = seconds > 0;
+    span.textContent = seconds > 0 ? seconds : '';
     if (seconds <= 0) return;
 
     let remaining = seconds;
     const timer = setInterval(() => {
         remaining--;
         span.textContent = remaining > 0 ? remaining : '';
-        if (remaining <= 0) {
-            clearInterval(timer);
-            btn.disabled = false;
-        }
+        if (remaining <= 0) { clearInterval(timer); btn.disabled = false; }
     }, 1000);
 }
 
@@ -403,8 +472,9 @@ document.addEventListener('keydown', e => {
 
 // ─── CSV export ───────────────────────────────────────────────────────────────
 function exportCsv() {
-    const values = Array.from(document.querySelectorAll('.entry-input'))
-        .map(i => i.value.trim()).filter(v => v);
+    const cfg    = ENDPOINT_CONFIGS[currentMode] || {};
+    const max    = cfg.maxEntries || 20;
+    const values = getNonEmptyLines().slice(0, max);
     const p = new URLSearchParams({ mode: currentMode });
     if (values.length) p.set('entries', values.join(','));
     window.location.href = '/api/data/export.csv?' + p.toString();
@@ -446,13 +516,15 @@ function applyFilter() {
         term ? visible + ' of ' + total + ' shown' : '';
 }
 
-// ─── Utility ──────────────────────────────────────────────────────────────────
+// ─── Utilities ────────────────────────────────────────────────────────────────
 function escHtml(s) {
     return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function truncate(s, n) {
+    return s.length > n ? s.substring(0, n) + '…' : s;
 }
 </script>
 

@@ -15,6 +15,8 @@ server:
 # flatten:        flatten nested JSON objects (e.g. b:{c:2} → b-c:2).
 # submit-delay-seconds: seconds the submit button stays disabled on page load.
 # validation-pattern:   client-side regex for each entry (empty = no validation).
+# max-entries:    HANDSET_SEARCH_CONFIG / CELL_SEARCH_CONFIG — upper limit on
+#                 entries accepted per search (default 20, reduce to restrict).
 canet:
   endpoints:
     - name: todos
@@ -37,6 +39,7 @@ canet:
       submit-delay-seconds: 0
       validation-pattern: ""
       validation-message: ""
+      max-entries: 20          # HANDSET_SEARCH_CONFIG
     - name: todos-cell
       type: cell
       url: https://jsonplaceholder.typicode.com/todos
@@ -59,6 +62,7 @@ canet:
       submit-delay-seconds: 0
       validation-pattern: ""
       validation-message: ""
+      max-entries: 20          # CELL_SEARCH_CONFIG
 
 management:
   endpoints:
@@ -114,7 +118,8 @@ canet:
       flatten-separator: "-"
       submit-delay-seconds: 3
       validation-pattern: "^\\d{8}$"
-      validation-message: "TAC must be exactly 8 digits"
+      validation-message: "Must be exactly 8 digits"
+      max-entries: 20          # HANDSET_SEARCH_CONFIG
     - name: cell-search
       type: cell
       url: http://localhost:8081/handsetdetails
@@ -144,4 +149,5 @@ canet:
       flatten-separator: "-"
       submit-delay-seconds: 3
       validation-pattern: "^\\d{15}$"
-      validation-message: "IMEI must be exactly 15 digits"
+      validation-message: "Must be exactly 15 digits"
+      max-entries: 20          # CELL_SEARCH_CONFIG
