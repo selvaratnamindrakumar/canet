@@ -1,0 +1,16 @@
+# Lambda runtime dependencies for the Employee Skills application.
+#
+# Differences from backend/requirements.txt:
+#   - uvicorn[standard] removed  (Lambda uses Mangum, not uvicorn)
+#   - mangum added               (ASGI → Lambda adapter)
+#   - boto3 added                (AWS SDK for Secrets Manager)
+#   - pytest / httpx / pytest-asyncio removed (test-only, not needed in Lambda)
+
+fastapi==0.111.0
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
+pydantic==2.7.1
+pydantic-settings==2.2.1
+python-dotenv==1.0.1
+mangum==0.17.0
+boto3==1.34.0
