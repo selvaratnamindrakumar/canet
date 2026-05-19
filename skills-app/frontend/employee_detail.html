@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Employee Detail — Employee Skills Tracker</title>
+    <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+        <span class="navbar__brand">Employee Skills Tracker</span>
+        <ul class="navbar__links">
+            <li><a href="index.html">Dashboard</a></li>
+            <li><a href="employees.html">Employees</a></li>
+        </ul>
+    </nav>
+
+    <main class="container">
+
+        <!-- Back link -->
+        <p style="margin-bottom:.75rem">
+            <a href="employees.html">&larr; Back to Employees</a>
+        </p>
+
+        <!-- Employee information header -->
+        <div id="employee-info"></div>
+
+        <!-- Skills grouped by category -->
+        <div id="skills-container"></div>
+
+        <!-- Skill update form -->
+        <div id="update-skill-form"></div>
+
+    </main>
+
+    <script type="module" src="js/employee_detail.js"></script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Employees — Employee Skills Tracker</title>
+    <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+        <span class="navbar__brand">Employee Skills Tracker</span>
+        <ul class="navbar__links">
+            <li><a href="index.html">Dashboard</a></li>
+            <li><a href="employees.html" class="active">Employees</a></li>
+        </ul>
+    </nav>
+
+    <main class="container">
+
+        <div class="page-header">
+            <h1>Employees</h1>
+            <p>Browse and search all employees. Click a card to view their skills profile.</p>
+        </div>
+
+        <!-- Search bar -->
+        <div class="search-bar">
+            <input
+                type="search"
+                id="search-input"
+                placeholder="Search by name, title, or department…"
+                aria-label="Search employees"
+            />
+            <span id="employee-count" style="align-self:center;color:var(--text-muted);font-size:.9rem"></span>
+        </div>
+
+        <!-- Employee cards -->
+        <div id="employees-container"></div>
+
+    </main>
+
+    <script type="module" src="js/employees.js"></script>
+</body>
+</html>
