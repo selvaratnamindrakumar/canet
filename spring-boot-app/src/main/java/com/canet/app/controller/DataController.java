@@ -54,27 +54,29 @@ public class DataController {
                     .limit(maxEnt)
                     .collect(Collectors.toList());
 
+            // Build lookup-key → original-input map for result annotation.
+            // Cell mode:    IMEI → TAC (first 8 chars); inputValue = original IMEI
+            // Handset mode: TAC  → TAC;                 inputValue = searched TAC
+            Map<String, String> tacToInput = new LinkedHashMap<>();
             if ("cell".equals(mode)) {
-                // Extract TAC (first 8 chars) from each IMEI; keep reverse-mapping for display
-                Map<String, String> tacToInput = new LinkedHashMap<>();
                 for (String entry : searched) {
                     String tac = entry.length() >= 8 ? entry.substring(0, 8) : entry;
                     tacToInput.putIfAbsent(tac, entry);
                 }
-                HttpsDataService.TacSearchResult r =
-                        dataService.fetchByTacs(url, new ArrayList<>(tacToInput.keySet()));
-                rows = r.results().stream()
-                        .map(row -> annotateInput(row, tacToInput))
-                        .collect(Collectors.toList());
-                // Map not-found TAC codes back to original input values
-                notFound = r.notFound().stream()
-                        .map(tac -> tacToInput.getOrDefault(tac, tac))
-                        .collect(Collectors.toList());
             } else {
-                HttpsDataService.TacSearchResult r = dataService.fetchByTacs(url, searched);
-                rows     = r.results();
-                notFound = r.notFound();
+                for (String entry : searched) {
+                    tacToInput.putIfAbsent(entry, entry);
+                }
             }
+
+            HttpsDataService.TacSearchResult r =
+                    dataService.fetchByTacs(url, new ArrayList<>(tacToInput.keySet()));
+            rows = r.results().stream()
+                    .map(row -> annotateInput(row, tacToInput))
+                    .collect(Collectors.toList());
+            notFound = r.notFound().stream()
+                    .map(tac -> tacToInput.getOrDefault(tac, tac))
+                    .collect(Collectors.toList());
 
             // Flatten nested JSON objects if configured
             if (mapping != null && mapping.isFlatten()) {

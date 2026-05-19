@@ -24,12 +24,14 @@ canet:
       url: https://jsonplaceholder.typicode.com/todos
       default-endpoint: true
       compact-fields:
+        - inputValue
         - userId
         - id
         - title
       detail-fields:
         - "*"
       labels:
+        inputValue: "Searched Value"
         userId: "User ID"
         id: "ID"
         title: "Title"
@@ -52,7 +54,7 @@ canet:
       detail-fields:
         - "*"
       labels:
-        inputValue: "Input Value"
+        inputValue: "Searched Value"
         userId: "User ID"
         id: "ID"
         title: "Title"
@@ -95,6 +97,7 @@ canet:
       url: http://localhost:8081/handsetdetails
       default-endpoint: true
       compact-fields:
+        - inputValue
         - tac
         - marketingName
         - manufacturer
@@ -103,6 +106,7 @@ canet:
       detail-fields:
         - "*"
       labels:
+        inputValue: "Searched Value"
         tac: "TAC"
         marketingName: "Marketing Name"
         manufacturer: "Manufacturer"
@@ -134,7 +138,7 @@ canet:
       detail-fields:
         - "*"
       labels:
-        inputValue: "Input IMEI"
+        inputValue: "Searched Value"
         tac: "TAC"
         marketingName: "Marketing Name"
         manufacturer: "Manufacturer"

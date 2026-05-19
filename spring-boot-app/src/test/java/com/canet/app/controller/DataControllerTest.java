@@ -27,7 +27,7 @@ class DataControllerTest {
 
     private static final String TEST_URL = "https://test.example.com";
     private static final List<String> COMPACT_FIELDS =
-            List.of("tac", "marketingName", "manufacturer", "modelName", "operatingSystem");
+            List.of("inputValue", "tac", "marketingName", "manufacturer", "modelName", "operatingSystem");
     private static final List<String> CELL_COMPACT =
             List.of("inputValue", "tac", "marketingName", "manufacturer", "modelName");
 
@@ -108,7 +108,20 @@ class DataControllerTest {
                 .thenReturn(new TacSearchResult(sampleRows(), List.of()));
 
         mockMvc.perform(get("/?mode=handset&entries=35674108"))
-                .andExpect(model().attribute("compactFields", hasSize(5)));
+                .andExpect(model().attribute("compactFields", hasSize(6)));
+    }
+
+    @Test
+    void index_handset_rowAnnotatedWithInputValueEqualToSearchedTac() throws Exception {
+        when(dataService.fetchByTacs(TEST_URL, List.of("35674108")))
+                .thenReturn(new TacSearchResult(List.of(sampleRows().get(0)), List.of()));
+
+        // In handset mode the searched TAC IS the inputValue — both appear in compact columns
+        mockMvc.perform(get("/?mode=handset&entries=35674108"))
+                .andExpect(status().isOk())
+                .andExpect(model().attribute("totalCount", 1))
+                // inputValue column (labelled "Searched Value") shows the searched TAC
+                .andExpect(content().string(containsString("35674108")));
     }
 
     @Test
