@@ -1,0 +1,66 @@
+version: "3.9"
+
+# ── CaNet — NEO Network Equipment Observer ───────────────────────────────────
+#
+# Starts both services together and wires them on a private network.
+#
+# Usage:
+#   docker compose up --build          # build + start both
+#   docker compose up --build canet    # main app only (uses live API)
+#   docker compose up --build mock     # mock server only
+#   docker compose logs -f canet       # tail main app logs
+#   docker compose down                # stop + remove containers
+#
+# UI:  http://localhost:8080
+# API: http://localhost:8081/handsetdetails
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Mock handset-details API ────────────────────────────────────────────────
+  mock:
+    build:
+      context: ./mock-server
+    image: canet/mock-server:latest
+    container_name: canet-mock
+    ports:
+      - "8081:8081"
+    networks:
+      - canet-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/handsetdetails/35674108 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── Main Spring Boot application ─────────────────────────────────────────────
+  canet:
+    build:
+      context: ./spring-boot-app
+    image: canet/app:latest
+    container_name: canet-app
+    ports:
+      - "8080:8080"
+    environment:
+      # Activate the dev profile so the app points at the mock server.
+      # Inside Docker the mock is reachable at http://mock:8081 (service name).
+      SPRING_PROFILES_ACTIVE: dev
+      # Override the mock URL to use the Docker service name, not localhost.
+      CANET_ENDPOINTS_0_URL: http://mock:8081/handsetdetails
+      CANET_ENDPOINTS_1_URL: http://mock:8081/handsetdetails
+    depends_on:
+      mock:
+        condition: service_healthy
+    networks:
+      - canet-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+networks:
+  canet-net:
+    driver: bridge
