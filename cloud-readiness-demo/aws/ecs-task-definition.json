@@ -1,0 +1,68 @@
+{
+  "family": "cloud-readiness-demo",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn":      "arn:aws:iam::ACCOUNT_ID:role/cloud-readiness-demo-task-role",
+
+  "containerDefinitions": [
+    {
+      "name": "cloud-readiness-demo",
+      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/cloud-readiness-demo:latest",
+      "essential": true,
+
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "hostPort":      8080,
+          "protocol":      "tcp"
+        }
+      ],
+
+      "environment": [
+        { "name": "SPRING_PROFILES_ACTIVE", "value": "prod"         },
+        { "name": "SERVER_PORT",            "value": "8080"         },
+        { "name": "APP_ENVIRONMENT",        "value": "production"   },
+        { "name": "APP_VERSION",            "value": "1.0.0"        },
+        { "name": "AWS_DEFAULT_REGION",     "value": "REGION"       }
+      ],
+
+      "secrets": [
+        {
+          "name":      "DB_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:prod/cloud-readiness-demo/db-password"
+        }
+      ],
+
+      "healthCheck": {
+        "command":     ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health/liveness || exit 1"],
+        "interval":    30,
+        "timeout":     5,
+        "retries":     3,
+        "startPeriod": 60
+      },
+
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/ecs/cloud-readiness-demo",
+          "awslogs-region":        "REGION",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group":  "true"
+        }
+      },
+
+      "readonlyRootFilesystem": false,
+      "privileged": false,
+      "user": "1000"
+    }
+  ],
+
+  "tags": [
+    { "key": "Project",     "value": "cloud-readiness-poc" },
+    { "key": "Environment", "value": "production"           },
+    { "key": "ManagedBy",   "value": "terraform"            }
+  ]
+}

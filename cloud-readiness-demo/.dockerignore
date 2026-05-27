@@ -1,0 +1,38 @@
+# ── Build artefacts ───────────────────────────────────────────
+target/
+*.jar
+*.war
+
+# ── IDE & editor ─────────────────────────────────────────────
+.idea/
+*.iml
+.eclipse/
+.classpath
+.project
+.settings/
+.vscode/
+*.swp
+*.swo
+
+# ── Git ───────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── Docker ───────────────────────────────────────────────────
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# ── Documentation ────────────────────────────────────────────
+docs/
+*.md
+README*
+
+# ── Test & CI artefacts ───────────────────────────────────────
+.github/
+.gitlab-ci.yml
+Jenkinsfile
+
+# ── OS ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

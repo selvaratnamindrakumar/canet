@@ -1,0 +1,14 @@
+# ============================================================
+# application-local.yml — Local / developer workstation
+# Activate with: -Dspring.profiles.active=local
+#   or: SPRING_PROFILES_ACTIVE=local
+# ============================================================
+
+app:
+  environment: local
+  region: us-east-1
+
+logging:
+  level:
+    com.company.demo: DEBUG
+    org.springframework.web: DEBUG

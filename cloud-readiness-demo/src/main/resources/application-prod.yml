@@ -1,0 +1,39 @@
+# ============================================================
+# application-prod.yml — AWS Production (ECS Fargate)
+# Activate with: SPRING_PROFILES_ACTIVE=prod
+#
+# All sensitive values (DB passwords, API keys) come from
+# AWS Secrets Manager via ECS task definition "secrets" block.
+# Non-sensitive config comes from SSM Parameter Store via the
+# "environment" block or Spring Cloud AWS.
+# ============================================================
+
+app:
+  environment: production
+
+server:
+  # In ECS behind an ALB the container only needs port 8080
+  port: 8080
+  tomcat:
+    # Tuned for container environments; adjust based on vCPU
+    threads:
+      max: 200
+      min-spare: 20
+
+logging:
+  level:
+    root: WARN
+    com.company.demo: INFO
+  # Structured JSON logging for CloudWatch Logs Insights queries
+  pattern:
+    console: '{"timestamp":"%d{ISO8601}","level":"%level","logger":"%logger{36}","message":"%message","thread":"%thread"}%n'
+
+management:
+  endpoint:
+    health:
+      show-details: never    # do not leak internals to public health endpoint
+  endpoints:
+    web:
+      exposure:
+        # In prod expose only what the internal monitoring VPC can reach
+        include: health,prometheus
