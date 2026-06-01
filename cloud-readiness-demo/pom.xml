@@ -21,6 +21,13 @@
     <properties>
         <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Jib version — centralised for easy upgrades -->
+        <jib.version>3.4.3</jib.version>
+        <!-- GraalVM Native Tools version — must match Spring Boot BOM expectations -->
+        <native.maven.plugin.version>0.10.3</native.maven.plugin.version>
+        <!-- Default Jib target — overridden on command line for ECR push -->
+        <jib.to.image>cloud-readiness-demo</jib.to.image>
+        <jib.from.image>eclipse-temurin:17-jre-alpine</jib.from.image>
     </properties>
 
     <dependencies>
@@ -65,7 +72,10 @@
 
     <build>
         <plugins>
-            <!-- Spring Boot Maven Plugin — creates executable fat JAR -->
+            <!-- ── Spring Boot Maven Plugin ──────────────────────────────
+                 Creates executable fat JAR with layered JAR support for
+                 optimal Docker / Jib layer caching.
+                 ─────────────────────────────────────────────────────── -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
@@ -76,12 +86,181 @@
                             <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
-                    <!-- Layered JAR — improves Docker layer caching -->
+                    <!-- Layered JAR — critical for Jib and Docker layer caching -->
                     <layers>
                         <enabled>true</enabled>
                     </layers>
                 </configuration>
             </plugin>
+
+            <!-- ── Jib Maven Plugin ───────────────────────────────────────
+                 Builds and pushes OCI-compliant container images WITHOUT
+                 requiring a local Docker daemon — ideal for enterprise
+                 Windows workstations and CI environments.
+
+                 Commands:
+                   mvn jib:buildTar            → tar file in target/
+                   mvn jib:build               → push directly to registry
+                   mvn jib:dockerBuild         → load into local Docker (if available)
+
+                 ECR push example (no Docker needed):
+                   mvn jib:build \
+                     -Djib.to.image=<account>.dkr.ecr.<region>.amazonaws.com/cloud-readiness-demo \
+                     -Djib.to.auth.username=AWS \
+                     -Djib.to.auth.password=$(aws ecr get-login-password)
+
+                 Tar build (for transfer to Docker-enabled environment):
+                   mvn jib:buildTar
+                   aws s3 cp target/jib-image.tar s3://my-bucket/images/
+                 ─────────────────────────────────────────────────────── -->
+            <plugin>
+                <groupId>com.google.cloud.tools</groupId>
+                <artifactId>jib-maven-plugin</artifactId>
+                <version>${jib.version}</version>
+                <configuration>
+                    <from>
+                        <!-- Base image — JRE only, no build tools in the final image -->
+                        <image>${jib.from.image}</image>
+                        <platforms>
+                            <!-- Build for linux/amd64 (ECS Fargate default) -->
+                            <platform>
+                                <os>linux</os>
+                                <architecture>amd64</architecture>
+                            </platform>
+                        </platforms>
+                    </from>
+                    <to>
+                        <!-- Override with -Djib.to.image=<ecr-url>/cloud-readiness-demo -->
+                        <image>${jib.to.image}</image>
+                        <tags>
+                            <tag>${project.version}</tag>
+                            <tag>latest</tag>
+                        </tags>
+                    </to>
+                    <container>
+                        <mainClass>com.company.demo.CloudReadinessApplication</mainClass>
+                        <ports>
+                            <port>8080</port>
+                        </ports>
+                        <environment>
+                            <SPRING_PROFILES_ACTIVE>prod</SPRING_PROFILES_ACTIVE>
+                            <SERVER_PORT>8080</SERVER_PORT>
+                            <APP_ENVIRONMENT>production</APP_ENVIRONMENT>
+                            <APP_VERSION>${project.version}</APP_VERSION>
+                        </environment>
+                        <jvmFlags>
+                            <!-- Container-aware memory limits — respects cgroup limits set by ECS -->
+                            <jvmFlag>-XX:+UseContainerSupport</jvmFlag>
+                            <jvmFlag>-XX:MaxRAMPercentage=75.0</jvmFlag>
+                            <jvmFlag>-Djava.security.egd=file:/dev/./urandom</jvmFlag>
+                        </jvmFlags>
+                        <!-- Reproducible build timestamp -->
+                        <creationTime>USE_CURRENT_TIMESTAMP</creationTime>
+                        <!-- Run as non-root UID 1000 (security best practice) -->
+                        <user>1000:1000</user>
+                    </container>
+                    <!-- Allow Jib to use the layered JAR from Spring Boot plugin -->
+                    <containerizingMode>packaged</containerizingMode>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
+
+    <!-- ── Profiles ──────────────────────────────────────────────────────────
+         native  : GraalVM Native Image compilation (requires GraalVM JDK)
+                   mvn -Pnative native:compile
+                   mvn -Pnative spring-boot:build-image  (requires Docker)
+         ────────────────────────────────────────────────────────────────── -->
+    <profiles>
+        <profile>
+            <id>native</id>
+            <build>
+                <plugins>
+                    <!-- GraalVM Native Maven Plugin ─────────────────────────
+                         Compiles the application to a native executable.
+                         Requires: JAVA_HOME or GRAALVM_HOME → GraalVM JDK 17+
+
+                         On EC2 Amazon Linux 2023:
+                           sudo yum install -y java-17-amazon-corretto-devel
+                           # or install GraalVM CE:
+                           # https://github.com/graalvm/graalvm-ce-builds/releases
+
+                         Compile command:
+                           mvn -Pnative native:compile
+
+                         Build OCI image (requires Docker):
+                           mvn -Pnative spring-boot:build-image
+                         ──────────────────────────────────────────────── -->
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <version>${native.maven.plugin.version}</version>
+                        <extensions>true</extensions>
+                        <executions>
+                            <execution>
+                                <id>build-native</id>
+                                <goals>
+                                    <goal>compile-no-fork</goal>
+                                </goals>
+                                <phase>package</phase>
+                            </execution>
+                            <execution>
+                                <id>test-native</id>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                                <phase>test</phase>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <imageName>${project.artifactId}</imageName>
+                            <buildArgs>
+                                <!-- Fail fast — no JVM fallback in the native image -->
+                                <buildArg>--no-fallback</buildArg>
+                                <!-- Helpful diagnostics during PoC phase -->
+                                <buildArg>-H:+ReportExceptionStackTraces</buildArg>
+                                <!-- Enable HTTP/HTTPS support -->
+                                <buildArg>--enable-url-protocols=http,https</buildArg>
+                            </buildArgs>
+                        </configuration>
+                    </plugin>
+
+                    <!-- Spring Boot Plugin — AOT processing for native image -->
+                    <plugin>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-maven-plugin</artifactId>
+                        <configuration>
+                            <image>
+                                <!-- Tag native images differently for comparison -->
+                                <name>${project.artifactId}:${project.version}-native</name>
+                                <env>
+                                    <!-- Activate GraalVM native image in Paketo buildpack -->
+                                    <BP_NATIVE_IMAGE>true</BP_NATIVE_IMAGE>
+                                    <BP_JVM_VERSION>17</BP_JVM_VERSION>
+                                </env>
+                            </image>
+                            <excludes>
+                                <exclude>
+                                    <groupId>org.projectlombok</groupId>
+                                    <artifactId>lombok</artifactId>
+                                </exclude>
+                            </excludes>
+                            <layers>
+                                <enabled>true</enabled>
+                            </layers>
+                        </configuration>
+                        <executions>
+                            <!-- AOT processing — generates reflection/proxy hints for GraalVM -->
+                            <execution>
+                                <id>process-aot</id>
+                                <goals>
+                                    <goal>process-aot</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
