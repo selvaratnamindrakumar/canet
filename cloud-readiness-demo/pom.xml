@@ -28,6 +28,9 @@
         <!-- Default Jib target — overridden on command line for ECR push -->
         <jib.to.image>cloud-readiness-demo</jib.to.image>
         <jib.from.image>eclipse-temurin:17-jre-alpine</jib.from.image>
+        <!-- Set true on Windows/enterprise networks with SSL inspection (PKIX errors).
+             Always false in CI/CD pipelines and AWS environments. -->
+        <jib.allowInsecureRegistries>false</jib.allowInsecureRegistries>
     </properties>
 
     <dependencies>
@@ -118,6 +121,11 @@
                 <artifactId>jib-maven-plugin</artifactId>
                 <version>${jib.version}</version>
                 <configuration>
+                    <!-- Enterprise environments with SSL inspection / untrusted CA certs
+                         set allowInsecureRegistries=true to bypass PKIX errors when pulling
+                         the base image from Docker Hub.  Override on the command line:
+                           mvn jib:buildTar -Djib.allowInsecureRegistries=false  (default in CI) -->
+                    <allowInsecureRegistries>${jib.allowInsecureRegistries}</allowInsecureRegistries>
                     <from>
                         <!-- Base image — JRE only, no build tools in the final image -->
                         <image>${jib.from.image}</image>
