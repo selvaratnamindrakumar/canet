@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: keypoc-dynamo
+    ports:
+      - "8000:8000"
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Browse DynamoDB tables at http://localhost:8001
+  # Confirm: PK=rowId, SK=DEVICE#MODEL#1750000000000 — no flattened JSON
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin:latest
+    container_name: keypoc-dynamo-admin
+    ports:
+      - "8001:8001"
+    environment:
+      DYNAMO_ENDPOINT: http://dynamodb-local:8000
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    depends_on:
+      dynamodb-local:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: keypoc-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: keypocdb
+      POSTGRES_USER: poc
+      POSTGRES_PASSWORD: poc
+    volumes:
+      - keypoc-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U poc -d keypocdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Browse Aurora schema at http://localhost:5050
+  # Confirm: table handset_cells with columns (cgi, family, qualifier, ts, visibility, value)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: keypoc-pgadmin
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@poc.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  keypoc-pgdata:
