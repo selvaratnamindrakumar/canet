@@ -25,7 +25,7 @@ class NeoApiServiceTest {
         mockAurora = Mockito.mock(HandsetRepository.class);
         when(mockDynamo.backendName()).thenReturn("DynamoDB");
         when(mockAurora.backendName()).thenReturn("Aurora PostgreSQL");
-        service = new NeoApiService(mockDynamo, mockAurora);
+        service = new NeoApiService(mockDynamo, mockAurora, java.util.Optional.empty());
     }
 
     @Test

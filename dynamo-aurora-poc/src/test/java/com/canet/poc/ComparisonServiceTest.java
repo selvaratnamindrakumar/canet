@@ -39,7 +39,7 @@ class ComparisonServiceTest {
         when(mockDynamo.findByCgi(anyString())).thenReturn(Optional.of(record));
         when(mockAurora.findByCgi(anyString())).thenReturn(Optional.of(record));
 
-        NeoApiService neoApiService = new NeoApiService(mockDynamo, mockAurora);
+        NeoApiService neoApiService = new NeoApiService(mockDynamo, mockAurora, java.util.Optional.empty());
         comparisonService = new ComparisonService(neoApiService);
     }
 
@@ -50,9 +50,9 @@ class ComparisonServiceTest {
         assertThat(result.getCgi()).isEqualTo("234-10-1234-56789");
         assertThat(result.getDynamoDbResult()).isNotNull();
         assertThat(result.getAuroraResult()).isNotNull();
-        assertThat(result.isResultsMatch()).isTrue();
+        assertThat(result.isDynamoAuroraMatch()).isTrue();
         assertThat(result.getEvaluation()).isNotNull();
-        assertThat(result.getEvaluation().getRecommendation()).isEqualTo("Aurora PostgreSQL");
+        assertThat(result.getEvaluation().getRecommendation()).startsWith("Aurora PostgreSQL");
         assertThat(result.getEvaluation().getRecommendationReasons()).hasSizeGreaterThan(3);
     }
 

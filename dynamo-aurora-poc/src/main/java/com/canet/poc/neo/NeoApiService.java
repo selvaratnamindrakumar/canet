@@ -11,13 +11,9 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * NEO API service — encapsulates:
- *   1. The database read (via the HandsetRepository abstraction)
- *   2. Post-retrieval business logic currently applied after reading from Accumulo
- *   3. Response shaping (return only the fields the API contract requires)
- *
- * This layer is identical regardless of DynamoDB or Aurora being used underneath,
- * demonstrating that the migration is transparent to the NEO API caller.
+ * NEO API service — backend-agnostic.
+ * Post-retrieval business logic runs identically regardless of which backend is queried.
+ * Supports DynamoDB, Aurora PostgreSQL, and RDS Oracle via the same interface.
  */
 @Slf4j
 @Service
@@ -25,12 +21,15 @@ public class NeoApiService {
 
     private final HandsetRepository dynamoRepo;
     private final HandsetRepository auroraRepo;
+    private final Optional<HandsetRepository> oracleRepo;
 
     public NeoApiService(
             @Qualifier("dynamoHandsetRepository")  HandsetRepository dynamoRepo,
-            @Qualifier("auroraHandsetRepository")  HandsetRepository auroraRepo) {
-        this.dynamoRepo = dynamoRepo;
-        this.auroraRepo = auroraRepo;
+            @Qualifier("auroraHandsetRepository")  HandsetRepository auroraRepo,
+            @Qualifier("oracleHandsetRepository")  Optional<HandsetRepository> oracleRepo) {
+        this.dynamoRepo  = dynamoRepo;
+        this.auroraRepo  = auroraRepo;
+        this.oracleRepo  = oracleRepo;
     }
 
     public Optional<NeoApiResponse> lookupByCgi(String cgi, String backend) {
@@ -38,7 +37,6 @@ public class NeoApiService {
         long t0 = System.currentTimeMillis();
         Optional<HandsetRecord> record = repo.findByCgi(cgi);
         long elapsed = System.currentTimeMillis() - t0;
-
         return record.map(r -> toNeoResponse(r, repo.backendName(), elapsed));
     }
 
@@ -47,7 +45,6 @@ public class NeoApiService {
         long t0 = System.currentTimeMillis();
         Optional<HandsetRecord> record = repo.findByCgiWithFields(cgi, fields);
         long elapsed = System.currentTimeMillis() - t0;
-
         return record.map(r -> toNeoResponse(r, repo.backendName(), elapsed));
     }
 
@@ -63,9 +60,11 @@ public class NeoApiService {
         return resolveRepo(backend).findByRegionAndTechnology(region, technology);
     }
 
-    // ── Post-retrieval business logic ─────────────────────────────────────────
-    // This is exactly the logic currently applied after reading from Accumulo.
-    // It lives in the service layer and is backend-agnostic.
+    public boolean isOracleEnabled() {
+        return oracleRepo.isPresent();
+    }
+
+    // ── Post-retrieval business logic (backend-agnostic) ──────────────────────
 
     private NeoApiResponse toNeoResponse(HandsetRecord r, String backendName, long queryMs) {
         return NeoApiResponse.builder()
@@ -75,8 +74,8 @@ public class NeoApiService {
                 .technology(r.getTechnology())
                 .latitude(r.getLatitude())
                 .longitude(r.getLongitude())
-                .locationLabel(buildLocationLabel(r))      // post-retrieval derivation
-                .networkTier(classifyNetworkTier(r))       // post-retrieval business logic
+                .locationLabel(buildLocationLabel(r))
+                .networkTier(classifyNetworkTier(r))
                 .dataSource(r.getDataSource())
                 .extended(r.getAdditionalAttributes())
                 .backendUsed(backendName)
@@ -84,10 +83,6 @@ public class NeoApiService {
                 .build();
     }
 
-    /**
-     * Post-retrieval: compose human-readable location from raw DB fields.
-     * Currently done after reading from Accumulo; unchanged after migration.
-     */
     private String buildLocationLabel(HandsetRecord r) {
         StringBuilder sb = new StringBuilder();
         if (r.getRegion() != null)  sb.append(r.getRegion()).append(", ");
@@ -96,24 +91,20 @@ public class NeoApiService {
         return sb.toString().isBlank() ? null : sb.toString().trim();
     }
 
-    /**
-     * Post-retrieval: classify subscriber network tier from signal + subscriber data.
-     * Business logic that currently runs in the application after the Accumulo read.
-     */
     private String classifyNetworkTier(HandsetRecord r) {
-        if ("5G".equalsIgnoreCase(r.getTechnology()) || "PREMIUM".equalsIgnoreCase(r.getSubscriberTier())) {
+        if ("5G".equalsIgnoreCase(r.getTechnology()) || "PREMIUM".equalsIgnoreCase(r.getSubscriberTier()))
             return "PREMIUM";
-        }
-        if ("4G".equalsIgnoreCase(r.getTechnology()) || "STANDARD".equalsIgnoreCase(r.getSubscriberTier())) {
+        if ("4G".equalsIgnoreCase(r.getTechnology()) || "STANDARD".equalsIgnoreCase(r.getSubscriberTier()))
             return "STANDARD";
-        }
         return "BASIC";
     }
 
     private HandsetRepository resolveRepo(String backend) {
-        if ("aurora".equalsIgnoreCase(backend) || "postgres".equalsIgnoreCase(backend)) {
-            return auroraRepo;
-        }
-        return dynamoRepo; // default
+        return switch (backend == null ? "dynamo" : backend.toLowerCase()) {
+            case "aurora", "postgres"   -> auroraRepo;
+            case "oracle", "rds-oracle" -> oracleRepo.orElseThrow(() ->
+                    new IllegalStateException("Oracle backend not enabled — set oracle.enabled=true"));
+            default                     -> dynamoRepo;
+        };
     }
 }

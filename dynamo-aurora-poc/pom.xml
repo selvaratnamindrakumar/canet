@@ -16,8 +16,8 @@
     <version>0.0.1-SNAPSHOT</version>
     <name>dynamo-aurora-poc</name>
     <description>
-        POC: DynamoDB vs Aurora PostgreSQL as Accumulo replacement.
-        Models BB/IS handset reference data and evaluates NEO API access patterns.
+        POC: DynamoDB vs Aurora PostgreSQL vs RDS Oracle as Accumulo replacement.
+        Models BB/IS handset reference data and evaluates NEO API access patterns across all three.
     </description>
 
     <properties>
@@ -51,6 +51,18 @@
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
+        </dependency>
+        <!-- Flyway Oracle support -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-oracle</artifactId>
+        </dependency>
+
+        <!-- Oracle JDBC (available on Maven Central since Oracle 19c) -->
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ojdbc11</artifactId>
+            <version>23.4.0.24.05</version>
         </dependency>
 
         <!-- AWS SDK v2 - DynamoDB -->

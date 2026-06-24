@@ -1,0 +1,216 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Accumulo Migration POC — DynamoDB + Aurora PostgreSQL + RDS Oracle SE2
+  Deploys all three database backends and the IAM role for the Spring Boot app.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: poc
+    AllowedValues: [poc, dev, test]
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for RDS subnet group
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: At least 2 subnets in different AZs for RDS
+
+  AppSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group for the Spring Boot application (EC2 / Elastic Beanstalk)
+
+  AuroraPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: Master password for Aurora PostgreSQL
+
+  OraclePassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: Master password for RDS Oracle SE2
+
+  DeployOracle:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Set true to deploy RDS Oracle (adds ~$150/month)
+
+Conditions:
+  CreateOracle: !Equals [!Ref DeployOracle, 'true']
+
+Resources:
+
+  # ── DynamoDB ─────────────────────────────────────────────────────────────────
+  HandsetReferenceDynamo:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub handset-reference-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: cgi
+          AttributeType: S
+      KeySchema:
+        - AttributeName: cgi
+          KeyType: HASH
+      Tags:
+        - Key: Project
+          Value: AccumuloMigrationPOC
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ── RDS Subnet Group (shared by Aurora + Oracle) ──────────────────────────────
+  RdsSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: POC subnet group for Aurora and Oracle
+      SubnetIds: !Ref SubnetIds
+      Tags:
+        - Key: Project
+          Value: AccumuloMigrationPOC
+
+  # ── DB Security Group ─────────────────────────────────────────────────────────
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow app to reach RDS on 5432 and 1521
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref AppSecurityGroupId
+          Description: Aurora PostgreSQL from app
+        - IpProtocol: tcp
+          FromPort: 1521
+          ToPort: 1521
+          SourceSecurityGroupId: !Ref AppSecurityGroupId
+          Description: Oracle from app (when deployed)
+      Tags:
+        - Key: Name
+          Value: !Sub poc-db-sg-${Environment}
+
+  # ── Aurora PostgreSQL Serverless v2 ──────────────────────────────────────────
+  AuroraCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      DBClusterIdentifier: !Sub neo-poc-aurora-${Environment}
+      Engine: aurora-postgresql
+      EngineVersion: '15.4'
+      DatabaseName: pocdb
+      MasterUsername: poc
+      MasterUserPassword: !Ref AuroraPassword
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: 0.5
+        MaxCapacity: 4
+      DBSubnetGroupName: !Ref RdsSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref DbSecurityGroup
+      StorageEncrypted: true
+      DeletionProtection: false
+      Tags:
+        - Key: Project
+          Value: AccumuloMigrationPOC
+
+  AuroraInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceIdentifier: !Sub neo-poc-aurora-writer-${Environment}
+      Engine: aurora-postgresql
+      DBInstanceClass: db.serverless
+      PubliclyAccessible: false
+      Tags:
+        - Key: Project
+          Value: AccumuloMigrationPOC
+
+  # ── RDS Oracle SE2 (optional — set DeployOracle=true) ────────────────────────
+  OracleInstance:
+    Type: AWS::RDS::DBInstance
+    Condition: CreateOracle
+    Properties:
+      DBInstanceIdentifier: !Sub neo-poc-oracle-${Environment}
+      DBInstanceClass: db.t3.small
+      Engine: oracle-se2
+      EngineVersion: '19.0.0.0.ru-2024-01.rur-2024-01.r1'
+      LicenseModel: license-included
+      DBName: ORCL
+      MasterUsername: poc
+      MasterUserPassword: !Ref OraclePassword
+      AllocatedStorage: 20
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: false
+      PubliclyAccessible: false
+      DBSubnetGroupName: !Ref RdsSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref DbSecurityGroup
+      DeletionProtection: false
+      Tags:
+        - Key: Project
+          Value: AccumuloMigrationPOC
+
+  # ── IAM Role for Spring Boot app (EC2 / Elastic Beanstalk) ───────────────────
+  AppRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub AccumuloPocAppRole-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+      Policies:
+        - PolicyName: DynamoDbAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:CreateTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:DeleteItem
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt HandsetReferenceDynamo.Arn
+
+  AppInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub AccumuloPocInstanceProfile-${Environment}
+      Roles:
+        - !Ref AppRole
+
+Outputs:
+  DynamoTableName:
+    Value: !Ref HandsetReferenceDynamo
+    Description: DynamoDB table name — set as poc.dynamo.table-name
+
+  AuroraEndpoint:
+    Value: !GetAtt AuroraCluster.Endpoint.Address
+    Description: Aurora cluster endpoint — set as AURORA_ENDPOINT
+
+  OracleEndpoint:
+    Condition: CreateOracle
+    Value: !GetAtt OracleInstance.Endpoint.Address
+    Description: Oracle endpoint — set as ORACLE_ENDPOINT
+
+  AppInstanceProfileArn:
+    Value: !GetAtt AppInstanceProfile.Arn
+    Description: Instance profile ARN for Elastic Beanstalk environment
+
+  DbSecurityGroupId:
+    Value: !Ref DbSecurityGroup
+    Description: DB security group — add Elastic Beanstalk EC2 SG as inbound source
