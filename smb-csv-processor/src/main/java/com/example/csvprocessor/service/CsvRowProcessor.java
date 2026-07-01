@@ -92,13 +92,18 @@ public class CsvRowProcessor {
         String timestamp = new SimpleDateFormat(outputProperties.getTimestampFormat()).format(new Date());
         String baseName  = sanitiseFileName(stripExtension(csvFile.getName()));
 
-        File successFile    = new File(directoryProperties.getOutputSuccess(),
-                baseName + "_" + outputProperties.getSuccessPrefix() + "_" + timestamp + ".csv");
-        File quarantineFile = new File(directoryProperties.getOutputQuarantine(),
-                baseName + "_" + outputProperties.getQuarantinePrefix() + "_" + timestamp + ".csv");
+        // Write to .staging first — moved atomically to output dirs only when fully written.
+        // This prevents SftpUploadRoute from picking up a partially-written success file.
+        File stagingDir      = new File(directoryProperties.getOutputSuccess(), ".staging");
+        File quarantineDir   = new File(directoryProperties.getOutputQuarantine());
+        stagingDir.mkdirs();
+        quarantineDir.mkdirs();
 
-        new File(directoryProperties.getOutputSuccess()).mkdirs();
-        new File(directoryProperties.getOutputQuarantine()).mkdirs();
+        String successName    = baseName + "_" + outputProperties.getSuccessPrefix()    + "_" + timestamp + ".csv";
+        String quarantineName = baseName + "_" + outputProperties.getQuarantinePrefix() + "_" + timestamp + ".csv";
+
+        File stagingFile    = new File(stagingDir,    successName);
+        File quarantineFile = new File(quarantineDir, quarantineName);
 
         long totalRows = 0, successCount = 0, quarantineCount = 0;
 
@@ -108,7 +113,7 @@ public class CsvRowProcessor {
                      new InputStreamReader(new FileInputStream(csvFile), config.getEncoding()),
                      READ_BUFFER);
              CSVParser parser = new CSVParser(reader, inputFormat);
-             PrintWriter successWriter    = openWriter(successFile,    config.getEncoding());
+             PrintWriter successWriter    = openWriter(stagingFile,    config.getEncoding());
              PrintWriter quarantineWriter = openWriter(quarantineFile, config.getEncoding())) {
 
             writeHeader(successWriter,    config, false);
@@ -155,16 +160,28 @@ public class CsvRowProcessor {
                 }
             }
         }
+        // Writers are now closed — files are fully written
 
         if (quarantineCount == 0 && quarantineFile.exists()) quarantineFile.delete();
-        if (successCount    == 0 && successFile.exists())    successFile.delete();
+
+        // Atomically move the completed success file from .staging to output/success/
+        // so SftpUploadRoute only ever sees complete files
+        File successFile = null;
+        if (successCount > 0) {
+            successFile = new File(directoryProperties.getOutputSuccess(), successName);
+            java.nio.file.Files.move(stagingFile.toPath(), successFile.toPath(),
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            log.info("Success file ready for upload: {}", successFile.getName());
+        } else if (stagingFile.exists()) {
+            stagingFile.delete();
+        }
 
         log.info("Finished '{}': total={}, success={}, quarantine={}",
                 csvFile.getName(), totalRows, successCount, quarantineCount);
 
         return new ProcessingResult(
                 csvFile.getName(), totalRows, successCount, quarantineCount,
-                successCount    > 0 ? successFile    : null,
+                successFile,
                 quarantineCount > 0 ? quarantineFile : null);
     }
 
