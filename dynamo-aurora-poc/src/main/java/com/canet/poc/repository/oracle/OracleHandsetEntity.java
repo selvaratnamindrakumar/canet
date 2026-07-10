@@ -49,10 +49,10 @@ public class OracleHandsetEntity {
     @Column(name = "operating_system", length = 100)
     private String operatingSystem;
 
-    @Column(name = "latitude",  precision = 10, scale = 7)
+    @Column(name = "latitude")
     private Double latitude;
 
-    @Column(name = "longitude", precision = 10, scale = 7)
+    @Column(name = "longitude")
     private Double longitude;
 
     @Column(name = "cell_id",   length = 20)
