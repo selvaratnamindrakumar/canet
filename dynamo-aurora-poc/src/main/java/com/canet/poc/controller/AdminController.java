@@ -3,6 +3,7 @@ package com.canet.poc.controller;
 import com.canet.poc.model.HandsetRecord;
 import com.canet.poc.repository.HandsetRepository;
 import com.canet.poc.repository.dynamo.DynamoHandsetRepository;
+import com.canet.poc.service.DataGeneratorService;
 import com.canet.poc.service.SeedDataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -17,19 +18,22 @@ import java.util.*;
 public class AdminController {
 
     private final SeedDataService seedDataService;
+    private final DataGeneratorService dataGeneratorService;
     private final DynamoHandsetRepository dynamoRepo;
     private final HandsetRepository auroraRepo;
     private final Optional<HandsetRepository> oracleRepo;
 
     public AdminController(
             SeedDataService seedDataService,
+            DataGeneratorService dataGeneratorService,
             DynamoHandsetRepository dynamoRepo,
             @Qualifier("auroraHandsetRepository")  HandsetRepository auroraRepo,
             @Qualifier("oracleHandsetRepository")  Optional<HandsetRepository> oracleRepo) {
-        this.seedDataService = seedDataService;
-        this.dynamoRepo      = dynamoRepo;
-        this.auroraRepo      = auroraRepo;
-        this.oracleRepo      = oracleRepo;
+        this.seedDataService       = seedDataService;
+        this.dataGeneratorService  = dataGeneratorService;
+        this.dynamoRepo            = dynamoRepo;
+        this.auroraRepo            = auroraRepo;
+        this.oracleRepo            = oracleRepo;
     }
 
     /**
@@ -53,6 +57,26 @@ public class AdminController {
                 ? List.of("dynamo", "aurora", "oracle")
                 : List.of("dynamo", "aurora"));
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * POST /api/admin/generate?count=1000&batchSize=100&clearFirst=true
+     *
+     * Generates synthetic records for load/benchmark testing.
+     * Runs entirely against local Docker (DynamoDB Local + PostgreSQL) — zero AWS charges.
+     * Recommended counts: 100 (quick), 1000 (standard), 5000 (stress).
+     *
+     * Start Docker first: docker-compose up -d
+     * Then run app with local profile: mvn spring-boot:run -Dspring-boot.run.profiles=local
+     */
+    @PostMapping("/generate")
+    public ResponseEntity<DataGeneratorService.GenerationSummary> generate(
+            @RequestParam(defaultValue = "1000")  int count,
+            @RequestParam(defaultValue = "100")   int batchSize,
+            @RequestParam(defaultValue = "true")  boolean clearFirst) {
+        DataGeneratorService.GenerationSummary summary =
+                dataGeneratorService.generate(count, batchSize, clearFirst);
+        return ResponseEntity.ok(summary);
     }
 
     /**
