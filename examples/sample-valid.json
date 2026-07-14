@@ -1,0 +1,4 @@
+[
+  { "id": "order-1001", "type": "ORDER", "amount": 42.50, "customer": "acme-co" },
+  { "id": "order-1002", "type": "ORDER", "amount": 17.00, "customer": "wonka-inc" }
+]

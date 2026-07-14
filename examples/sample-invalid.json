@@ -1,0 +1,4 @@
+[
+  { "id": "order-2001", "type": "ORDER", "amount": 9.99 },
+  { "type": "ORDER", "amount": -1, "customer": "missing-id" }
+]

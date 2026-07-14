@@ -1,0 +1,284 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Sandbox deployment of the file-ingestion pipeline: S3 arrivals bucket ->
+  Lambda validation/transform -> DynamoDB, with a quarantine bucket for
+  invalid records and CloudWatch logging/metrics/alarms.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: sandbox
+    Description: Short name used to prefix resources (e.g. sandbox, dev).
+
+  ArrivalsRetentionDays:
+    Type: Number
+    Default: 180
+    Description: Days before objects in the arrivals bucket expire.
+
+  QuarantineRetentionDays:
+    Type: Number
+    Default: 90
+    Description: Days before objects in the quarantine bucket expire.
+
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+    Description: Days to retain the Lambda's CloudWatch Logs.
+
+  AlarmEmail:
+    Type: String
+    Default: ""
+    Description: Optional email address to notify on Lambda processing errors.
+
+Conditions:
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, ""]]
+
+Resources:
+  # ---------------------------------------------------------------------
+  # Data store
+  # ---------------------------------------------------------------------
+  RecordsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${EnvironmentName}-records"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  # ---------------------------------------------------------------------
+  # Alarm notification (optional)
+  # ---------------------------------------------------------------------
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${EnvironmentName}-pipeline-alarms"
+
+  AlarmEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlarmEmail
+    Properties:
+      TopicArn: !Ref AlarmTopic
+      Protocol: email
+      Endpoint: !Ref AlarmEmail
+
+  # ---------------------------------------------------------------------
+  # Lambda: validate, transform, route
+  # ---------------------------------------------------------------------
+  ProcessingLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${EnvironmentName}-process-arrivals"
+      RetentionInDays: !Ref LogRetentionDays
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentName}-process-arrivals-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: process-arrivals-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: logs:CreateLogStream
+                Resource: !GetAtt ProcessingLogGroup.Arn
+              - Effect: Allow
+                Action: logs:PutLogEvents
+                Resource: !Sub "${ProcessingLogGroup.Arn}:*"
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${EnvironmentName}-arrivals-${AWS::AccountId}-${AWS::Region}/*"
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${EnvironmentName}-quarantine-${AWS::AccountId}-${AWS::Region}/*"
+              - Effect: Allow
+                Action: dynamodb:PutItem
+                Resource: !GetAtt RecordsTable.Arn
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: "*"
+
+  ProcessArrivalsFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ProcessingLogGroup
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-process-arrivals"
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref RecordsTable
+          QUARANTINE_BUCKET: !Sub "${EnvironmentName}-quarantine-${AWS::AccountId}-${AWS::Region}"
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import time
+          import urllib.parse
+          import boto3
+
+          s3 = boto3.client('s3')
+          ddb = boto3.resource('dynamodb')
+          cw = boto3.client('cloudwatch')
+
+          TABLE = ddb.Table(os.environ['TABLE_NAME'])
+          QUARANTINE_BUCKET = os.environ['QUARANTINE_BUCKET']
+          NAMESPACE = 'FileIngestionPipeline'
+
+
+          def emit(name, value=1):
+              cw.put_metric_data(
+                  Namespace=NAMESPACE,
+                  MetricData=[{'MetricName': name, 'Value': value, 'Unit': 'Count'}],
+              )
+
+
+          def quarantine(source_bucket, source_key, body, reason):
+              dest_key = f"{source_key}.error"
+              payload = {
+                  'source_bucket': source_bucket,
+                  'source_key': source_key,
+                  'reason': reason,
+                  'body': body,
+              }
+              s3.put_object(
+                  Bucket=QUARANTINE_BUCKET,
+                  Key=dest_key,
+                  Body=json.dumps(payload, default=str).encode('utf-8'),
+              )
+              emit('RecordsQuarantined')
+
+
+          def handler(event, context):
+              for rec in event['Records']:
+                  bucket = rec['s3']['bucket']['name']
+                  key = urllib.parse.unquote_plus(rec['s3']['object']['key'])
+
+                  try:
+                      obj = s3.get_object(Bucket=bucket, Key=key)
+                      raw = obj['Body'].read()
+                  except Exception as e:
+                      quarantine(bucket, key, '', f'failed to read object: {e}')
+                      emit('ProcessingErrors')
+                      continue
+
+                  try:
+                      records = json.loads(raw)
+                      if isinstance(records, dict):
+                          records = [records]
+                  except Exception as e:
+                      quarantine(bucket, key, raw.decode('utf-8', 'replace'), f'invalid json: {e}')
+                      emit('ProcessingErrors')
+                      continue
+
+                  valid_count = 0
+                  for r in records:
+                      rid = r.get('id') if isinstance(r, dict) else None
+                      if not rid or not isinstance(rid, str):
+                          quarantine(bucket, key, r, 'missing or invalid id field')
+                          continue
+
+                      item = dict(r)
+                      if isinstance(item.get('type'), str):
+                          item['type'] = item['type'].lower()
+                      item['ingested_at'] = int(time.time())
+
+                      try:
+                          TABLE.put_item(Item=item)
+                          valid_count += 1
+                      except Exception as e:
+                          quarantine(bucket, key, r, f'dynamodb write failed: {e}')
+
+                  emit('FilesProcessed')
+                  emit('RecordsValid', valid_count)
+
+              return {'statusCode': 200}
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProcessArrivalsFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub "arn:aws:s3:::${EnvironmentName}-arrivals-${AWS::AccountId}-${AWS::Region}"
+      SourceAccount: !Ref AWS::AccountId
+
+  ProcessingErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${EnvironmentName}-process-arrivals-errors"
+      AlarmDescription: Lambda invocation errors on the arrivals processor.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ProcessArrivalsFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+
+  # ---------------------------------------------------------------------
+  # Buckets (created last so the Lambda permission already exists)
+  # ---------------------------------------------------------------------
+  QuarantineBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${EnvironmentName}-quarantine-${AWS::AccountId}-${AWS::Region}"
+      LifecycleConfiguration:
+        Rules:
+          - Id: quarantine-retention
+            Status: Enabled
+            ExpirationInDays: !Ref QuarantineRetentionDays
+
+  ArrivalsBucket:
+    Type: AWS::S3::Bucket
+    DependsOn: LambdaInvokePermission
+    Properties:
+      BucketName: !Sub "${EnvironmentName}-arrivals-${AWS::AccountId}-${AWS::Region}"
+      LifecycleConfiguration:
+        Rules:
+          - Id: arrivals-retention
+            Status: Enabled
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 30
+              - StorageClass: GLACIER
+                TransitionInDays: 90
+            ExpirationInDays: !Ref ArrivalsRetentionDays
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt ProcessArrivalsFunction.Arn
+
+Outputs:
+  ArrivalsBucketName:
+    Value: !Ref ArrivalsBucket
+  QuarantineBucketName:
+    Value: !Ref QuarantineBucket
+  RecordsTableName:
+    Value: !Ref RecordsTable
+  ProcessArrivalsFunctionName:
+    Value: !Ref ProcessArrivalsFunction
+  AlarmTopicArn:
+    Value: !Ref AlarmTopic
