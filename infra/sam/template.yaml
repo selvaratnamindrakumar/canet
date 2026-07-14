@@ -1,0 +1,162 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Sandbox file-ingestion pipeline (AWS SAM): S3 arrivals bucket -> Lambda
+  validation/transform -> DynamoDB, quarantine bucket for failures,
+  CloudWatch metrics/alarms.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: sandbox
+    Description: Short name used to prefix resources (e.g. sandbox, dev).
+
+  ArrivalsRetentionDays:
+    Type: Number
+    Default: 180
+    Description: Days before objects in the arrivals bucket expire.
+
+  QuarantineRetentionDays:
+    Type: Number
+    Default: 90
+    Description: Days before objects in the quarantine bucket expire.
+
+  AlarmEmail:
+    Type: String
+    Default: ""
+    Description: Optional email address to notify on Lambda processing errors.
+
+Conditions:
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, ""]]
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 60
+    MemorySize: 256
+
+Resources:
+  # ---------------------------------------------------------------------
+  # Data store
+  # ---------------------------------------------------------------------
+  RecordsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${EnvironmentName}-records"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  # ---------------------------------------------------------------------
+  # Alarm notification (optional)
+  # ---------------------------------------------------------------------
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${EnvironmentName}-pipeline-alarms"
+
+  AlarmEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlarmEmail
+    Properties:
+      TopicArn: !Ref AlarmTopic
+      Protocol: email
+      Endpoint: !Ref AlarmEmail
+
+  # ---------------------------------------------------------------------
+  # Buckets
+  # ---------------------------------------------------------------------
+  QuarantineBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${EnvironmentName}-quarantine-${AWS::AccountId}-${AWS::Region}"
+      LifecycleConfiguration:
+        Rules:
+          - Id: quarantine-retention
+            Status: Enabled
+            ExpirationInDays: !Ref QuarantineRetentionDays
+
+  ArrivalsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${EnvironmentName}-arrivals-${AWS::AccountId}-${AWS::Region}"
+      LifecycleConfiguration:
+        Rules:
+          - Id: arrivals-retention
+            Status: Enabled
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 30
+              - StorageClass: GLACIER
+                TransitionInDays: 90
+            ExpirationInDays: !Ref ArrivalsRetentionDays
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+  # ---------------------------------------------------------------------
+  # Lambda: validate, transform, route
+  #
+  # SAM's S3 event source wires the bucket notification and the Lambda
+  # invoke permission for us (via a managed custom resource), so there is
+  # no manual AWS::Lambda::Permission / DependsOn ordering to get right
+  # here, unlike a hand-written CloudFormation template.
+  # ---------------------------------------------------------------------
+  ProcessArrivalsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-process-arrivals"
+      CodeUri: src/process_arrivals/
+      Handler: app.handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref RecordsTable
+          QUARANTINE_BUCKET: !Ref QuarantineBucket
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ArrivalsBucket
+        - S3CrudPolicy:
+            BucketName: !Ref QuarantineBucket
+        - DynamoDBWritePolicy:
+            TableName: !Ref RecordsTable
+        - CloudWatchPutMetricPolicy: {}
+      Events:
+        ArrivalUpload:
+          Type: S3
+          Properties:
+            Bucket: !Ref ArrivalsBucket
+            Events: s3:ObjectCreated:*
+
+  ProcessingErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${EnvironmentName}-process-arrivals-errors"
+      AlarmDescription: Lambda invocation errors on the arrivals processor.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ProcessArrivalsFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+
+Outputs:
+  ArrivalsBucketName:
+    Value: !Ref ArrivalsBucket
+  QuarantineBucketName:
+    Value: !Ref QuarantineBucket
+  RecordsTableName:
+    Value: !Ref RecordsTable
+  ProcessArrivalsFunctionName:
+    Value: !Ref ProcessArrivalsFunction
+  AlarmTopicArn:
+    Value: !Ref AlarmTopic

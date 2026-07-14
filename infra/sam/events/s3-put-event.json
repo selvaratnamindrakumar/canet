@@ -1,0 +1,12 @@
+{
+  "Records": [
+    {
+      "eventSource": "aws:s3",
+      "eventName": "ObjectCreated:Put",
+      "s3": {
+        "bucket": { "name": "sandbox-arrivals-000000000000-us-east-1" },
+        "object": { "key": "sample-valid.json" }
+      }
+    }
+  ]
+}
