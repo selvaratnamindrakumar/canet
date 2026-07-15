@@ -13,6 +13,7 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -38,15 +39,20 @@ public class UdpListenerApplication implements CommandLineRunner {
     @Value("${network.interface:}")
     private String networkInterface;
 
-    @Value("${udp.receive.buffer.size:16777216}")
-    private int udpReceiveBufferSize;
-
     private ExecutorService captureExecutor;
     private ThreadPoolExecutor processingExecutor;
     private ScheduledExecutorService monitorExecutor;
 
-    private final AtomicLong rejectedCount = new AtomicLong(0);
-    private final AtomicLong capturedCount = new AtomicLong(0);
+    private final AtomicLong rejectedCount  = new AtomicLong(0);
+    private final AtomicLong capturedCount  = new AtomicLong(0);
+
+    /**
+     * Sequence number stamped on each packet in the capture thread before it is
+     * submitted to the processing pool.  Because the counter increments in the
+     * single-threaded pcap loop, it reflects true receive order even when worker
+     * threads complete tasks out of sequence.
+     */
+    private final AtomicLong sequenceCounter = new AtomicLong(0);
 
     public static void main(String[] args) {
         SpringApplication.run(UdpListenerApplication.class, args);
@@ -68,14 +74,10 @@ public class UdpListenerApplication implements CommandLineRunner {
                 TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(queueSize),
                 (runnable, executor) -> {
-                    // Log every rejection so overload is visible immediately
                     long count = rejectedCount.incrementAndGet();
                     if (count % 100 == 1) {
-                        log.error("Processing queue FULL — task rejected (total rejections={}). "
-                                + "active={} queueSize={}",
-                                count,
-                                executor.getActiveCount(),
-                                executor.getQueue().size());
+                        log.error("Processing queue FULL — task rejected (total={}). active={} queue={}",
+                                count, executor.getActiveCount(), executor.getQueue().size());
                     }
                 }
         );
@@ -93,7 +95,8 @@ public class UdpListenerApplication implements CommandLineRunner {
                 .orElseThrow(() -> new RuntimeException(
                         "No matching network interface found for: " + networkInterface));
 
-        log.info("Starting packet capture on interface: {}", selectedInterface.getName());
+        log.info("Starting capture on interface={} numThreads={} queueSize={}",
+                selectedInterface.getName(), numThreads, queueSize);
 
         captureExecutor.submit(() -> startPacketCapture(selectedInterface));
     }
@@ -106,11 +109,6 @@ public class UdpListenerApplication implements CommandLineRunner {
                     10
             );
 
-            // Increase OS-level socket receive buffer to reduce kernel drops
-            handle.setSnaplen(65536);
-
-            log.info("Packet capture started. numThreads={} queueSize={}", numThreads, queueSize);
-
             handle.loop(-1, packet -> {
                 if (!packet.contains(UdpPacket.class)) {
                     return;
@@ -121,22 +119,37 @@ public class UdpListenerApplication implements CommandLineRunner {
                     return;
                 }
 
+                /*
+                 * Stamp sequence and receivedAt HERE — in the single-threaded pcap
+                 * capture callback — before handing off to the multi-threaded pool.
+                 *
+                 * This guarantees:
+                 *  - sequenceNumber reflects true receive order regardless of which
+                 *    worker thread eventually processes the packet.
+                 *  - receivedAt is the actual network arrival time, not the
+                 *    (potentially delayed) worker-thread processing time.
+                 */
+                final long seq        = sequenceCounter.getAndIncrement();
+                final Instant rcvTime = Instant.now();
+                final long captured   = capturedCount.incrementAndGet();
+
                 byte[] payloadBytes = udpPacket.getPayload().getRawData();
-                int dstPort = udpPacket.getHeader().getDstPort().valueAsInt();
+                int    dstPort      = udpPacket.getHeader().getDstPort().valueAsInt();
 
                 String dstIp = null;
+                String srcIp = null;
                 if (packet.contains(IpV4Packet.class)) {
-                    dstIp = packet.get(IpV4Packet.class)
-                            .getHeader()
-                            .getDstAddr()
-                            .getHostAddress();
+                    IpV4Packet.IpV4Header ipHeader = packet.get(IpV4Packet.class).getHeader();
+                    dstIp = ipHeader.getDstAddr().getHostAddress();
+                    srcIp = ipHeader.getSrcAddr().getHostAddress();
                 }
 
                 final String finalDstIp = dstIp;
-                capturedCount.incrementAndGet();
+                final String finalSrcIp = srcIp;
 
                 processingExecutor.submit(() ->
-                        updateMessageHandler.handleMessage(payloadBytes, dstPort, finalDstIp));
+                        updateMessageHandler.handleMessage(
+                                payloadBytes, dstPort, finalDstIp, finalSrcIp, seq, rcvTime));
             });
 
         } catch (Exception e) {
@@ -151,19 +164,18 @@ public class UdpListenerApplication implements CommandLineRunner {
             return t;
         });
 
-        monitorExecutor.scheduleAtFixedRate(() -> {
+        monitorExecutor.scheduleAtFixedRate(() ->
             log.info("MONITOR captured={} active={} queue={} completed={} rejected={}",
                     capturedCount.get(),
                     processingExecutor.getActiveCount(),
                     processingExecutor.getQueue().size(),
                     processingExecutor.getCompletedTaskCount(),
-                    rejectedCount.get());
-        }, 1, 1, TimeUnit.MINUTES);
+                    rejectedCount.get()),
+            1, 1, TimeUnit.MINUTES);
     }
 
     private boolean isConfiguredInterface(PcapNetworkInterface nif) {
         if (networkInterface == null || networkInterface.isBlank()) {
-            // Take first non-loopback interface if none configured
             return !nif.getName().startsWith("lo");
         }
         return nif.getName().equalsIgnoreCase(networkInterface)
