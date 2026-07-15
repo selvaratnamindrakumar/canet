@@ -4,6 +4,7 @@ import com.canet.udplistener.entity.ValidatorRecord;
 import com.canet.udplistener.service.ValidatorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -71,12 +72,18 @@ public class ValidatorController {
                     "receivedAt",     saved.getReceivedAt().toString()
             ));
 
-        } catch (Exception e) {
-            // Unique constraint violation — already registered
+        } catch (DataIntegrityViolationException e) {
+            // Unique constraint on (hash_value, dst_ip, dst_port) — already registered.
             log.warn("Duplicate record: hash={} dstIp={} dstPort={}",
                     request.hashValue(), request.dstIp(), request.dstPort());
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
                     "error", "Record already exists for this hash+dstIp+dstPort"
+            ));
+        } catch (Exception e) {
+            log.error("registerRecord failed hash={} dstIp={} dstPort={}",
+                    request.hashValue(), request.dstIp(), request.dstPort(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "error", "Internal error: " + e.getMessage()
             ));
         }
     }
@@ -102,19 +109,22 @@ public class ValidatorController {
 
         log.debug("exists hash={} dstIp={} dstPort={}", hash, dstIp, dstPort);
 
-        boolean found = validatorService.exists(hash, dstIp, dstPort);
+        // Single composite query: avoids a separate EXISTS round-trip and guarantees
+        // the returned sequenceNumber/receivedAt belong to this exact destination.
+        Optional<ValidatorRecord> record =
+                validatorService.findByCompositeKey(hash, dstIp, dstPort);
 
-        if (!found) {
+        if (record.isEmpty()) {
             return ResponseEntity.ok(Map.of("exists", false));
         }
 
-        Optional<ValidatorRecord> record = validatorService.findByHash(hash);
-        return record.map(r -> ResponseEntity.ok(Map.<String, Object>of(
+        ValidatorRecord r = record.get();
+        return ResponseEntity.ok(Map.<String, Object>of(
                 "exists",         true,
                 "sequenceNumber", r.getSequenceNumber(),
                 "receivedAt",     r.getReceivedAt().toString(),
                 "ggasId",         r.getGgasId() != null ? r.getGgasId() : ""
-        ))).orElseGet(() -> ResponseEntity.ok(Map.of("exists", true)));
+        ));
     }
 
     /** Request DTO for the register endpoint. */

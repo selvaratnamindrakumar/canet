@@ -60,11 +60,13 @@ public class ValidatorService {
     }
 
     /**
-     * Returns the first matching record for a given hash so the caller can
-     * inspect sequence number and receivedAt for ordering diagnostics.
+     * Returns the record for a specific composite key so the caller gets the
+     * sequenceNumber and receivedAt that belong to this exact destination.
+     * A hash-only lookup is wrong when the same payload was sent to multiple
+     * destinations — it would return a record for a different dstIp/dstPort.
      */
     @Transactional(readOnly = true)
-    public Optional<ValidatorRecord> findByHash(String hashValue) {
-        return repository.findFirstByHashValue(hashValue);
+    public Optional<ValidatorRecord> findByCompositeKey(String hashValue, String dstIp, Integer dstPort) {
+        return repository.findFirstByHashValueAndDstIpAndDstPort(hashValue, dstIp, dstPort);
     }
 }

@@ -11,9 +11,12 @@ import java.time.Instant;
 @Entity
 @Table(name = "captured_message",
        indexes = {
-           @Index(name = "idx_cm_hash",     columnList = "hash_value", unique = true),
-           @Index(name = "idx_cm_sequence", columnList = "sequence_number"),
-           @Index(name = "idx_cm_received", columnList = "received_at")
+           // Non-unique: the same hash may legitimately appear for different dstIp/dstPort.
+           // Deduplication is enforced by the composite check in the handler, not by a DB unique constraint.
+           @Index(name = "idx_cm_hash",      columnList = "hash_value"),
+           @Index(name = "idx_cm_composite", columnList = "hash_value,dst_ip,dst_port", unique = true),
+           @Index(name = "idx_cm_sequence",  columnList = "sequence_number"),
+           @Index(name = "idx_cm_received",  columnList = "received_at")
        })
 @Data
 @Builder
@@ -42,7 +45,7 @@ public class CapturedMessage {
     @Column(name = "received_at", nullable = false)
     private Instant receivedAt;
 
-    @Column(name = "hash_value", nullable = false, unique = true, length = 64)
+    @Column(name = "hash_value", nullable = false, length = 64)
     private String hashValue;
 
     @Column(name = "ggas_id", length = 36)

@@ -22,5 +22,8 @@ public interface ValidatorRecordRepository extends CrudRepository<ValidatorRecor
 
     boolean existsByHashValueAndDstIpAndDstPort(String hashValue, String dstIp, Integer dstPort);
 
-    Optional<ValidatorRecord> findFirstByHashValue(String hashValue);
+    // Composite lookup — must match on all three keys so the returned record belongs
+    // to this exact destination, not to a different destination that happens to share the hash.
+    Optional<ValidatorRecord> findFirstByHashValueAndDstIpAndDstPort(
+            String hashValue, String dstIp, Integer dstPort);
 }
