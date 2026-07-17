@@ -109,7 +109,7 @@ public class UdpListenerApplication implements CommandLineRunner {
                     10
             );
 
-            handle.loop(-1, packet -> {
+            handle.loop(-1, (org.pcap4j.core.PacketListener) packet -> {
                 if (!packet.contains(UdpPacket.class)) {
                     return;
                 }
