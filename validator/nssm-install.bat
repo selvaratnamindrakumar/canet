@@ -27,6 +27,7 @@ set JAVA_EXE=%JAVA_HOME%\bin\java.exe
 set JVM_OPTS=-Xms256m -Xmx1g
 :: Optional property overrides at service level
 :: set EXTRA_ARGS=--server.port=9090 --dedup.window.seconds=7200
+:: Disable SSL:  --server.ssl.enabled=false --server.port=8080
 set EXTRA_ARGS=
 :: ─────────────────────────────────────────────────────────────────
 
@@ -90,13 +91,24 @@ if errorlevel 1 goto :err
 
 echo.
 echo [OK] Service "%SERVICE_NAME%" installed.
+echo.
+echo      IMPORTANT — SSL certificate required before first start:
+echo        Run %INSTALL_DIR%\gen-keystore.bat as Administrator
+echo        to create the keystore and export the certificate for
+echo        the middleware truststore.
+echo.
 echo      The validator must be started BEFORE the generator.
-echo      Start with:   sc start %SERVICE_NAME%
-echo      Stop with:    sc stop  %SERVICE_NAME%
-echo      Status:       sc query %SERVICE_NAME%
-echo      Health check: http://localhost:8080/api/validator/health
-echo      Edit config:  %INSTALL_DIR%\config\application.properties
-echo      Logs:         %INSTALL_DIR%\logs\
+echo      Start with:    sc start %SERVICE_NAME%
+echo      Stop with:     sc stop  %SERVICE_NAME%
+echo      Status:        sc query %SERVICE_NAME%
+echo.
+echo      Endpoints (SSL enabled by default):
+echo        Health:      http://localhost:8080/api/validator/health
+echo        Exists:      https://localhost:8443/api/validator/exists?hash=^<md5^>
+echo        Record:      http://localhost:8080/api/validator/record  (generator)
+echo.
+echo      Edit config:   %INSTALL_DIR%\config\application.properties
+echo      Logs:          %INSTALL_DIR%\logs\
 echo.
 goto :eof
 
