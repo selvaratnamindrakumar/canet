@@ -52,9 +52,31 @@ public class CapturedMessage {
     @Column(name = "name", length = 36)
     private String name;
 
+    /** Source IP address of the captured UDP packet. */
+    @Column(name = "src_ip", length = 45)
+    private String srcIp;
+
+    @Column(name = "src_port")
+    private Integer srcPort;
+
     @Column(name = "dst_ip", length = 45)
     private String dstIp;
 
     @Column(name = "dst_port")
     private Integer dstPort;
+
+    /**
+     * Raw UDP payload encoded as a lowercase hex string.
+     * Always present when the generator has payload bytes.
+     * Stored as TEXT to accommodate variable-length payloads.
+     */
+    @Column(name = "payload_hex", columnDefinition = "TEXT")
+    private String payloadHex;
+
+    /**
+     * Base64 encoding of the raw UDP payload bytes.
+     * Present only when enable.base64.payload=true in the generator.
+     */
+    @Column(name = "payload_base64", columnDefinition = "TEXT")
+    private String payloadBase64;
 }

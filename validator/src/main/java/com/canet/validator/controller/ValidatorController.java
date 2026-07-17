@@ -77,7 +77,11 @@ public class ValidatorController {
     public ResponseEntity<Map<String, Object>> registerRecord(
             @RequestBody RecordRequest request) {
 
-        log.debug("register hash={} dstIp={} dstPort={}", request.hashValue(), request.dstIp(), request.dstPort());
+        log.debug("register hash={} src={}:{} dst={}:{} base64={}",
+                request.hashValue(),
+                request.srcIp(), request.srcPort(),
+                request.dstIp(), request.dstPort(),
+                request.payloadBase64() != null);
 
         try {
             Instant cutoff = Instant.now().minusSeconds(dedupWindowSeconds);
@@ -99,8 +103,12 @@ public class ValidatorController {
                     .hashValue(request.hashValue())
                     .ggasId(id)
                     .name(id)
+                    .srcIp(request.srcIp())
+                    .srcPort(request.srcPort())
                     .dstIp(request.dstIp())
                     .dstPort(request.dstPort())
+                    .payloadHex(request.payloadHex())
+                    .payloadBase64(request.payloadBase64())
                     .build());
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
@@ -166,8 +174,12 @@ public class ValidatorController {
     public record RecordRequest(
             String  hashValue,
             String  ggasId,
+            String  srcIp,
+            Integer srcPort,
             String  dstIp,
             Integer dstPort,
+            String  payloadHex,
+            String  payloadBase64,
             Long    sequenceNumber,
             Instant receivedAt
     ) {}

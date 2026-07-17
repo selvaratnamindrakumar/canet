@@ -131,17 +131,23 @@ public class GeneratorApplication implements CommandLineRunner {
                 final Instant rcvTime = Instant.now();
                 capturedCount.incrementAndGet();
 
-                final byte[]  payload = udpPacket.getPayload().getRawData();
-                final int     dstPort = udpPacket.getHeader().getDstPort().valueAsInt();
+                final byte[] payload = udpPacket.getPayload().getRawData();
+                final int    srcPort = udpPacket.getHeader().getSrcPort().valueAsInt();
+                final int    dstPort = udpPacket.getHeader().getDstPort().valueAsInt();
+
+                String srcIp = null;
                 String dstIp = null;
                 if (packet.contains(IpV4Packet.class)) {
-                    dstIp = packet.get(IpV4Packet.class)
-                            .getHeader().getDstAddr().getHostAddress();
+                    IpV4Packet.IpV4Header ip = packet.get(IpV4Packet.class).getHeader();
+                    srcIp = ip.getSrcAddr().getHostAddress();
+                    dstIp = ip.getDstAddr().getHostAddress();
                 }
+                final String finalSrcIp = srcIp;
                 final String finalDstIp = dstIp;
 
                 processingExecutor.submit(() ->
-                        updateMessageHandler.handleMessage(payload, dstPort, finalDstIp, seq, rcvTime));
+                        updateMessageHandler.handleMessage(
+                                payload, srcPort, finalSrcIp, dstPort, finalDstIp, seq, rcvTime));
             });
 
         } catch (Exception e) {

@@ -10,6 +10,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -36,25 +37,43 @@ public class ValidatorClient {
     /**
      * Register a captured packet with the validator.
      *
-     * @return CREATED   if the validator accepted the record (HTTP 201)
-     *         DUPLICATE if the validator rejected it as a duplicate (HTTP 409)
-     *         ERROR     for any other outcome
+     * The JSON body always includes:
+     *   hashValue, ggasId, srcIp, srcPort, dstIp, dstPort,
+     *   payloadHex, sequenceNumber, receivedAt.
+     *
+     * When enable.base64.payload=true the handler supplies a non-null
+     * payloadBase64 and it is included as an additional field.
+     *
+     * @return CREATED   — validator accepted the record (HTTP 201)
+     *         DUPLICATE — validator's time-window dedup rejected it (HTTP 409)
+     *         ERROR     — any other outcome
      */
-    public RegistrationResult register(String hash,
-                                       String ggasId,
-                                       String dstIp,
-                                       int dstPort,
-                                       long sequenceNumber,
+    public RegistrationResult register(String  hash,
+                                       String  ggasId,
+                                       String  srcIp,
+                                       int     srcPort,
+                                       String  dstIp,
+                                       int     dstPort,
+                                       String  payloadHex,
+                                       String  payloadBase64,
+                                       long    sequenceNumber,
                                        Instant receivedAt) {
         try {
-            Map<String, Object> body = Map.of(
-                    "hashValue",      hash,
-                    "ggasId",         ggasId,
-                    "dstIp",          dstIp != null ? dstIp : "",
-                    "dstPort",        dstPort,
-                    "sequenceNumber", sequenceNumber,
-                    "receivedAt",     receivedAt.toString()
-            );
+            // LinkedHashMap preserves insertion order in the serialised JSON —
+            // useful when reading logs or debugging.
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("hashValue",      hash);
+            body.put("ggasId",         ggasId);
+            body.put("srcIp",          srcIp  != null ? srcIp  : "");
+            body.put("srcPort",        srcPort);
+            body.put("dstIp",          dstIp  != null ? dstIp  : "");
+            body.put("dstPort",        dstPort);
+            body.put("payloadHex",     payloadHex != null ? payloadHex : "");
+            if (payloadBase64 != null) {
+                body.put("payloadBase64", payloadBase64);
+            }
+            body.put("sequenceNumber", sequenceNumber);
+            body.put("receivedAt",     receivedAt.toString());
 
             ResponseEntity<Map> response = restTemplate.postForEntity(
                     validatorBaseUrl + "/api/validator/record",
@@ -71,8 +90,8 @@ public class ValidatorClient {
             return RegistrationResult.DUPLICATE;
 
         } catch (Exception e) {
-            log.error("Validator registration failed hash={} dstIp={} dstPort={}: {}",
-                    hash, dstIp, dstPort, e.getMessage());
+            log.error("Validator registration failed hash={} src={}:{} dst={}:{}: {}",
+                    hash, srcIp, srcPort, dstIp, dstPort, e.getMessage());
             return RegistrationResult.ERROR;
         }
     }
