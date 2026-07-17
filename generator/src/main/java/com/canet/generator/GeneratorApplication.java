@@ -36,8 +36,8 @@ public class GeneratorApplication implements CommandLineRunner {
     @Value("${queue.size:5000}")
     private int queueSize;
 
-    @Value("${network.interface:}")
-    private String networkInterface;
+    @Value("${network.interface.name:}")
+    private String networkInterfaceName;
 
     private ExecutorService captureExecutor;
     private ThreadPoolExecutor processingExecutor;
@@ -85,17 +85,27 @@ public class GeneratorApplication implements CommandLineRunner {
         startMonitoring();
 
         List<PcapNetworkInterface> allInterfaces = Pcaps.findAllDevs();
-        log.info("Available interfaces: {}",
-                allInterfaces.stream().map(PcapNetworkInterface::getName).toList());
+
+        if (networkInterfaceName == null || networkInterfaceName.isBlank()) {
+            logAvailableInterfaces(allInterfaces);
+            log.warn("network.interface.name is not set — stopping.");
+            log.warn("Add the chosen interface name to application.properties:");
+            log.warn("  network.interface.name=<name from list above>");
+            System.exit(0);
+        }
 
         PcapNetworkInterface selected = allInterfaces.stream()
-                .filter(this::isConfiguredInterface)
+                .filter(this::matchesConfiguredName)
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException(
-                        "No interface found for: " + networkInterface));
+                        "No interface found matching: '" + networkInterfaceName
+                        + "'. Set network.interface.name to one of the names logged at startup."));
 
-        log.info("Starting capture on interface={} numThreads={} queueSize={}",
-                selected.getName(), numThreads, queueSize);
+        log.info("Capture interface  : {}", selected.getName());
+        if (selected.getDescription() != null) {
+            log.info("Description        : {}", selected.getDescription());
+        }
+        log.info("numThreads={} queueSize={}", numThreads, queueSize);
 
         captureExecutor.submit(() -> startCapture(selected));
     }
@@ -155,13 +165,54 @@ public class GeneratorApplication implements CommandLineRunner {
                 1, 1, TimeUnit.MINUTES);
     }
 
-    private boolean isConfiguredInterface(PcapNetworkInterface nif) {
-        if (networkInterface == null || networkInterface.isBlank()) {
-            return !nif.getName().startsWith("lo");
+    /**
+     * Logs every pcap interface with its index, pcap device name, human-readable
+     * description, and bound IP addresses.  Called at startup when
+     * network.interface.name is blank so the operator can identify the correct
+     * device and set the property.
+     *
+     * On Windows the pcap name looks like:
+     *   \Device\NPF_{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}
+     * In application.properties escape each backslash:
+     *   network.interface.name=\\Device\\NPF_{XXXXXXXX-...}
+     */
+    private void logAvailableInterfaces(List<PcapNetworkInterface> interfaces) {
+        log.info("──────────────────────────────────────────────────────────────");
+        log.info("network.interface.name is not configured.");
+        log.info("Available pcap interfaces ({} found):", interfaces.size());
+        log.info("──────────────────────────────────────────────────────────────");
+        for (int i = 0; i < interfaces.size(); i++) {
+            PcapNetworkInterface nif = interfaces.get(i);
+            log.info("[{}] Name        : {}", i, nif.getName());
+            if (nif.getDescription() != null && !nif.getDescription().isBlank()) {
+                log.info("    Description : {}", nif.getDescription());
+            }
+            nif.getAddresses().forEach(addr -> {
+                if (addr.getAddress() != null) {
+                    log.info("    Address     : {}", addr.getAddress().getHostAddress());
+                }
+            });
         }
-        return nif.getName().equalsIgnoreCase(networkInterface)
-                || nif.getAddresses().stream()
-                        .anyMatch(a -> networkInterface.equals(
-                                a.getAddress() != null ? a.getAddress().getHostAddress() : null));
+        log.info("──────────────────────────────────────────────────────────────");
+        log.info("Set network.interface.name in application.properties.");
+        log.info("On Windows, escape backslashes — example:");
+        log.info("  network.interface.name=\\\\Device\\\\NPF_{{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}}");
+        log.info("──────────────────────────────────────────────────────────────");
+    }
+
+    /**
+     * Returns true if {@code nif} matches the configured name.
+     * Matching is case-insensitive and also accepts an IP address
+     * bound to the interface, so both forms work in application.properties:
+     *   network.interface.name=\\Device\\NPF_{...}
+     *   network.interface.name=192.168.1.10
+     */
+    private boolean matchesConfiguredName(PcapNetworkInterface nif) {
+        if (nif.getName().equalsIgnoreCase(networkInterfaceName)) {
+            return true;
+        }
+        return nif.getAddresses().stream()
+                .anyMatch(a -> networkInterfaceName.equals(
+                        a.getAddress() != null ? a.getAddress().getHostAddress() : null));
     }
 }

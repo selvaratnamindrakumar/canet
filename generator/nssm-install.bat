@@ -24,8 +24,11 @@ set JAR_NAME=canet-generator-0.0.1-SNAPSHOT.jar
 set JAVA_HOME=C:\Program Files\Java\jdk-17
 set JAVA_EXE=%JAVA_HOME%\bin\java.exe
 set JVM_OPTS=-Xms128m -Xmx512m
-:: Optional: override any property at service level
-:: set EXTRA_ARGS=--network.interface=eth0 --validator.base-url=http://10.0.0.5:8080
+:: Optional: override any property at service level.
+:: TIP — run the service once with network.interface.name blank to log all
+:: available pcap interfaces, then set the chosen name below and reinstall.
+:: set EXTRA_ARGS=--network.interface.name=\\Device\\NPF_{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}
+:: set EXTRA_ARGS=--network.interface.name=eth0 --validator.base-url=http://10.0.0.5:8080
 set EXTRA_ARGS=
 :: ─────────────────────────────────────────────────────────────────
 
