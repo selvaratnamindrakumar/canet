@@ -1,11 +1,10 @@
 package com.canet.udplistener.handler;
 
 import com.canet.udplistener.entity.CapturedMessage;
-import com.canet.udplistener.entity.ValidatorRecord;
 import com.canet.udplistener.repository.CapturedMessageRepository;
-import com.canet.udplistener.repository.ValidatorRecordRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -20,15 +19,30 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class UpdateMessageHandler {
 
-    private final CapturedMessageRepository capturedMessageRepository;
-    private final ValidatorRecordRepository validatorRecordRepository;
+    private final CapturedMessageRepository repository;
 
-    // ThreadLocal avoids allocating a new MessageDigest per packet while keeping thread safety.
-    private static final ThreadLocal<MessageDigest> SHA256 = ThreadLocal.withInitial(() -> {
+    /**
+     * Duplicate detection window.  Only messages whose received_at falls within
+     * the last N seconds are considered when checking whether a hash already exists.
+     * Set to 0 to disable time-windowed dedup (check all records — not recommended
+     * for high-volume deployments as it causes full table scans on the hash index).
+     *
+     * Examples:
+     *   dedup.window.seconds=60     — 1-minute window
+     *   dedup.window.seconds=3600   — 1-hour window (default)
+     *   dedup.window.seconds=86400  — 24-hour window
+     */
+    @Value("${dedup.window.seconds:3600}")
+    private long dedupWindowSeconds;
+
+    // MD5 — maintained as per existing design.
+    // ThreadLocal reuses the MessageDigest instance per worker thread to avoid
+    // allocation overhead under high packet rates.
+    private static final ThreadLocal<MessageDigest> MD5 = ThreadLocal.withInitial(() -> {
         try {
-            return MessageDigest.getInstance("SHA-256");
+            return MessageDigest.getInstance("MD5");
         } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 not available", e);
+            throw new IllegalStateException("MD5 not available", e);
         }
     });
 
@@ -36,14 +50,12 @@ public class UpdateMessageHandler {
      * @param payloadBytes   raw UDP payload
      * @param dstPort        destination port
      * @param dstIp          destination IP (may be null if not IPv4)
-     * @param srcIp          source IP (may be null if not IPv4)
      * @param sequenceNumber monotonic counter stamped at capture time in the pcap thread
      * @param receivedAt     wall-clock instant stamped at capture time in the pcap thread
      */
     public void handleMessage(byte[] payloadBytes,
                               int dstPort,
                               String dstIp,
-                              String srcIp,
                               long sequenceNumber,
                               Instant receivedAt) {
 
@@ -51,47 +63,34 @@ public class UpdateMessageHandler {
         String threadName = Thread.currentThread().getName();
 
         try {
-            String hash = computeHash(payloadBytes);
+            String hash = computeMd5(payloadBytes);
 
-            log.debug("Thread={} seq={} hash={} port={} dstIp={} srcIp={}",
-                    threadName, sequenceNumber, hash, dstPort, dstIp, srcIp);
+            log.debug("Thread={} seq={} hash={} port={} dstIp={}",
+                    threadName, sequenceNumber, hash, dstPort, dstIp);
 
-            // Composite dedup: same content to the same destination counts as a duplicate.
-            // Same content to a DIFFERENT destination is a distinct message and must pass.
-            if (capturedMessageRepository.existsByHashValueAndDstIpAndDstPort(hash, dstIp, dstPort)) {
-                log.debug("Thread={} seq={} duplicate (hash+dst) — skipped", threadName, sequenceNumber);
+            Instant cutoff = Instant.now().minusSeconds(dedupWindowSeconds);
+
+            if (repository.existsByHashValueAndReceivedAtAfter(hash, cutoff)) {
+                log.debug("Thread={} seq={} duplicate hash within {}s window — skipped",
+                        threadName, sequenceNumber, dedupWindowSeconds);
                 return;
             }
 
-            String ggasId = UUID.randomUUID().toString();
-            String payloadJson = buildJson(payloadBytes, dstPort, dstIp, srcIp, sequenceNumber, receivedAt);
+            String id = UUID.randomUUID().toString();
+            String payloadJson = buildJson(payloadBytes, dstPort, dstIp, sequenceNumber, receivedAt);
 
             CapturedMessage message = CapturedMessage.builder()
                     .sequenceNumber(sequenceNumber)
                     .receivedAt(receivedAt)
                     .hashValue(hash)
-                    .ggasId(ggasId)
-                    .srcIp(srcIp)
+                    .ggasId(id)
+                    .name(id)
                     .dstIp(dstIp)
                     .dstPort(dstPort)
                     .payloadJson(payloadJson)
                     .build();
 
-            capturedMessageRepository.save(message);
-
-            // Publish the same record to the validator table so Diosma's EXISTS
-            // queries hit a read-optimised table rather than the write-heavy capture table.
-            ValidatorRecord vr = ValidatorRecord.builder()
-                    .sequenceNumber(sequenceNumber)
-                    .receivedAt(receivedAt)
-                    .hashValue(hash)
-                    .ggasId(ggasId)
-                    .srcIp(srcIp)
-                    .dstIp(dstIp)
-                    .dstPort(dstPort)
-                    .build();
-
-            validatorRecordRepository.save(vr);
+            repository.save(message);
 
             long elapsed = System.currentTimeMillis() - start;
             if (elapsed > 200) {
@@ -103,20 +102,19 @@ public class UpdateMessageHandler {
         }
     }
 
-    private String computeHash(byte[] data) {
-        MessageDigest digest = SHA256.get();
+    private String computeMd5(byte[] data) {
+        MessageDigest digest = MD5.get();
         digest.reset();
         return HexFormat.of().formatHex(digest.digest(data));
     }
 
     private String buildJson(byte[] payloadBytes, int dstPort, String dstIp,
-                             String srcIp, long sequenceNumber, Instant receivedAt) {
+                             long sequenceNumber, Instant receivedAt) {
         String payload = new String(payloadBytes, StandardCharsets.UTF_8)
                 .replace("\\", "\\\\")
                 .replace("\"", "\\\"");
         return String.format(
-                "{\"seq\":%d,\"receivedAt\":\"%s\",\"srcIp\":\"%s\",\"dstIp\":\"%s\","
-                + "\"dstPort\":%d,\"payload\":\"%s\"}",
-                sequenceNumber, receivedAt, srcIp, dstIp, dstPort, payload);
+                "{\"seq\":%d,\"receivedAt\":\"%s\",\"dstIp\":\"%s\",\"dstPort\":%d,\"payload\":\"%s\"}",
+                sequenceNumber, receivedAt, dstIp, dstPort, payload);
     }
 }

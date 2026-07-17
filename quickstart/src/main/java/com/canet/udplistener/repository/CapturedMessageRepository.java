@@ -4,22 +4,27 @@ import com.canet.udplistener.entity.CapturedMessage;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
+import java.util.Optional;
+
 /**
- * Generator write path.  Spring Data JPA — no stored procedures.
+ * Spring Data JPA — no stored procedures.
  *
- * existsByHashValue →
- *   SELECT COUNT(*) FROM captured_message WHERE hash_value = ?
+ * existsByHashValueAndReceivedAtAfter →
+ *   SELECT COUNT(*) FROM captured_message
+ *   WHERE hash_value = ? AND received_at > ?
+ *
+ * The cutoff instant is computed as Instant.now().minusSeconds(dedup.window.seconds)
+ * so duplicate detection is limited to a configurable time window rather than
+ * scanning the entire table indefinitely.
  *
  * save() →
  *   INSERT INTO captured_message (...) VALUES (...)
- *
- * The composite check (hash + dstIp + dstPort) is the primary dedup guard;
- * existsByHashValue is kept as a fast short-circuit before the full check.
  */
 @Repository
 public interface CapturedMessageRepository extends CrudRepository<CapturedMessage, Long> {
 
-    boolean existsByHashValue(String hashValue);
+    boolean existsByHashValueAndReceivedAtAfter(String hashValue, Instant cutoff);
 
-    boolean existsByHashValueAndDstIpAndDstPort(String hashValue, String dstIp, Integer dstPort);
+    Optional<CapturedMessage> findFirstByHashValueAndReceivedAtAfter(String hashValue, Instant cutoff);
 }

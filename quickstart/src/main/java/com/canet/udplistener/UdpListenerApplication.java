@@ -137,19 +137,16 @@ public class UdpListenerApplication implements CommandLineRunner {
                 int    dstPort      = udpPacket.getHeader().getDstPort().valueAsInt();
 
                 String dstIp = null;
-                String srcIp = null;
                 if (packet.contains(IpV4Packet.class)) {
-                    IpV4Packet.IpV4Header ipHeader = packet.get(IpV4Packet.class).getHeader();
-                    dstIp = ipHeader.getDstAddr().getHostAddress();
-                    srcIp = ipHeader.getSrcAddr().getHostAddress();
+                    dstIp = packet.get(IpV4Packet.class)
+                            .getHeader().getDstAddr().getHostAddress();
                 }
 
                 final String finalDstIp = dstIp;
-                final String finalSrcIp = srcIp;
 
                 processingExecutor.submit(() ->
                         updateMessageHandler.handleMessage(
-                                payloadBytes, dstPort, finalDstIp, finalSrcIp, seq, rcvTime));
+                                payloadBytes, dstPort, finalDstIp, seq, rcvTime));
             });
 
         } catch (Exception e) {

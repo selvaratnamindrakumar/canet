@@ -11,12 +11,9 @@ import java.time.Instant;
 @Entity
 @Table(name = "captured_message",
        indexes = {
-           // Non-unique: the same hash may legitimately appear for different dstIp/dstPort.
-           // Deduplication is enforced by the composite check in the handler, not by a DB unique constraint.
-           @Index(name = "idx_cm_hash",      columnList = "hash_value"),
-           @Index(name = "idx_cm_composite", columnList = "hash_value,dst_ip,dst_port", unique = true),
-           @Index(name = "idx_cm_sequence",  columnList = "sequence_number"),
-           @Index(name = "idx_cm_received",  columnList = "received_at")
+           @Index(name = "idx_cm_hash",     columnList = "hash_value"),
+           @Index(name = "idx_cm_sequence", columnList = "sequence_number"),
+           @Index(name = "idx_cm_received", columnList = "received_at")
        })
 @Data
 @Builder
@@ -31,28 +28,31 @@ public class CapturedMessage {
     /**
      * Monotonically increasing counter stamped in the pcap capture thread
      * before the task is submitted to the processing executor.
-     * Allows consumers to detect and restore the original receive order
+     * Consumers can sort on this column to restore original receive order
      * even when worker threads complete out of sequence.
      */
     @Column(name = "sequence_number", nullable = false)
     private Long sequenceNumber;
 
     /**
-     * Wall-clock instant stamped in the pcap capture thread, not in the
+     * Wall-clock instant stamped in the pcap capture callback, not in the
      * worker thread.  This is the true receive time regardless of how long
      * the message waits in the executor queue.
      */
     @Column(name = "received_at", nullable = false)
     private Instant receivedAt;
 
-    @Column(name = "hash_value", nullable = false, length = 64)
+    /** MD5 hex of the raw UDP payload. */
+    @Column(name = "hash_value", nullable = false, length = 32)
     private String hashValue;
 
+    /** GGAS identifier — UUID assigned per captured message. */
     @Column(name = "ggas_id", length = 36)
     private String ggasId;
 
-    @Column(name = "src_ip", length = 45)
-    private String srcIp;
+    /** Name column — present in original schema; UUID value used in practice. */
+    @Column(name = "name", length = 36)
+    private String name;
 
     @Column(name = "dst_ip", length = 45)
     private String dstIp;
