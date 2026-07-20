@@ -1,5 +1,6 @@
 package com.canet.validator.controller;
 
+import com.canet.validator.client.DiosmaClient;
 import com.canet.validator.entity.CapturedMessage;
 import com.canet.validator.repository.CapturedMessageRepository;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +42,7 @@ import java.util.UUID;
 public class ValidatorController {
 
     private final CapturedMessageRepository repository;
+    private final DiosmaClient diosmaClient;
 
     // ─── Health ──────────────────────────────────────────────────────
 
@@ -82,6 +84,9 @@ public class ValidatorController {
                     .uuid(uuid)
                     .arrivalTime(arrivalTime)
                     .build());
+
+            // Notify Diosma asynchronously — does not block this response.
+            diosmaClient.notify(saved);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                     "id",          saved.getId(),

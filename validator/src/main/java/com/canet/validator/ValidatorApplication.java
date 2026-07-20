@@ -2,15 +2,17 @@ package com.canet.validator;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableAsync;
 
 /**
- * Validator service — receives hash registrations from the generator and
- * answers existence queries from the Diosma middle tier.
+ * Validator service — receives hash registrations from the generator,
+ * persists them to MySQL, and notifies Diosma asynchronously.
  *
- * Runs as a standalone Spring Boot web application on port 8080 (default).
- * The generator connects to this service; it has no pcap dependency.
+ * @EnableAsync activates the @Async method in DiosmaClient so Diosma
+ * notifications run on a separate thread and do not block the 201 response.
  */
 @SpringBootApplication
+@EnableAsync
 public class ValidatorApplication {
 
     public static void main(String[] args) {
