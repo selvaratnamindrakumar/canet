@@ -11,9 +11,7 @@ import java.time.Instant;
 @Entity
 @Table(name = "captured_message",
        indexes = {
-           @Index(name = "idx_cm_hash",     columnList = "hash_value"),
-           @Index(name = "idx_cm_sequence", columnList = "sequence_number"),
-           @Index(name = "idx_cm_received", columnList = "received_at")
+           @Index(name = "idx_cm_hash", columnList = "file_hash")
        })
 @Data
 @Builder
@@ -21,62 +19,22 @@ import java.time.Instant;
 @AllArgsConstructor
 public class CapturedMessage {
 
+    /** Auto-generated primary key — MySQL assigns this on insert. */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /**
-     * Monotonic capture-time sequence number supplied by the generator.
-     * Consumers can sort on this column to restore original receive order
-     * even when worker threads completed out of sequence.
-     */
-    @Column(name = "sequence_number", nullable = false)
-    private Long sequenceNumber;
+    /** MD5 hex of the raw UDP payload (32 chars).
+     *  Not unique — different payloads can legitimately produce the same hash. */
+    @Column(name = "file_hash", nullable = false, length = 32)
+    private String fileHash;
 
-    /**
-     * Wall-clock instant stamped by the generator at packet capture time,
-     * not at validation or persistence time.
-     */
-    @Column(name = "received_at", nullable = false)
-    private Instant receivedAt;
+    /** UUID assigned by the generator per captured packet. */
+    @Column(name = "uuid", length = 36)
+    private String uuid;
 
-    /** MD5 hex of the raw UDP payload (32 chars). */
-    @Column(name = "hash_value", nullable = false, length = 32)
-    private String hashValue;
-
-    /** GGAS identifier — UUID assigned by the generator per packet. */
-    @Column(name = "ggas_id", length = 36)
-    private String ggasId;
-
-    /** Name column — present in original schema; UUID value used in practice. */
-    @Column(name = "name", length = 36)
-    private String name;
-
-    /** Source IP address of the captured UDP packet. */
-    @Column(name = "src_ip", length = 45)
-    private String srcIp;
-
-    @Column(name = "src_port")
-    private Integer srcPort;
-
-    @Column(name = "dst_ip", length = 45)
-    private String dstIp;
-
-    @Column(name = "dst_port")
-    private Integer dstPort;
-
-    /**
-     * Raw UDP payload encoded as a lowercase hex string.
-     * Always present when the generator has payload bytes.
-     * Stored as TEXT to accommodate variable-length payloads.
-     */
-    @Column(name = "payload_hex", columnDefinition = "TEXT")
-    private String payloadHex;
-
-    /**
-     * Base64 encoding of the raw UDP payload bytes.
-     * Present only when enable.base64.payload=true in the generator.
-     */
-    @Column(name = "payload_base64", columnDefinition = "TEXT")
-    private String payloadBase64;
+    /** Packet arrival time supplied by the generator — when the packet was
+     *  captured at the network interface, not when this row was written. */
+    @Column(name = "arrival_time", nullable = false)
+    private Instant arrivalTime;
 }
