@@ -3,10 +3,12 @@
 :: NSSM Windows Service Installer — CANET Generator
 ::
 :: Prerequisites:
-::   1. Java 17 installed
-::   2. nssm.exe on PATH or in the same directory as this script
-::   3. Run this script as Administrator
-::   4. canet-generator-0.0.1-SNAPSHOT.jar built and present
+::   1. Npcap installed with WinPcap API-compatible Mode
+::      (run install-npcap.bat first — provides wpcap.dll for packet capture)
+::   2. Java 17 installed
+::   3. nssm.exe on PATH or in the same directory as this script
+::   4. Run this script as Administrator
+::   5. canet-generator-0.0.1-SNAPSHOT.jar built and present
 ::
 :: Usage:
 ::   nssm-install.bat           — install with defaults below
