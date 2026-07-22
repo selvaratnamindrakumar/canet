@@ -34,6 +34,13 @@
       <scope>runtime</scope>
     </dependency>
 
+    <!-- H2 — embedded database for h2 and no-db profiles (no MySQL required) -->
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
     <!-- Lombok -->
     <dependency>
       <groupId>org.projectlombok</groupId>

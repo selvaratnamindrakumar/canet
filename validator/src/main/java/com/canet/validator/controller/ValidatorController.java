@@ -1,8 +1,8 @@
 package com.canet.validator.controller;
 
 import com.canet.validator.client.DiosmaClient;
+import com.canet.validator.db.DatabaseGateway;
 import com.canet.validator.entity.CapturedMessage;
-import com.canet.validator.repository.CapturedMessageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -41,7 +41,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ValidatorController {
 
-    private final CapturedMessageRepository repository;
+    private final DatabaseGateway database;
     private final DiosmaClient diosmaClient;
 
     // ─── Health ──────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ public class ValidatorController {
                     ? request.ggasId()
                     : UUID.randomUUID().toString();
 
-            CapturedMessage saved = repository.save(CapturedMessage.builder()
+            CapturedMessage saved = database.save(CapturedMessage.builder()
                     .fileHash(request.hashValue())
                     .uuid(uuid)
                     .arrivalTime(arrivalTime)
@@ -130,8 +130,7 @@ public class ValidatorController {
         log.debug("exists hash={}", hash);
 
         try {
-            Optional<CapturedMessage> record =
-                    repository.findFirstByFileHashOrderByIdDesc(hash);
+            Optional<CapturedMessage> record = database.findLatestByHash(hash);
 
             if (record.isEmpty()) {
                 // 204 No Content — hash not in database
