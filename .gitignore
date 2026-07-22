@@ -1,0 +1,30 @@
+### Maven build output ###
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+### IDE ###
+.idea/
+*.iml
+*.iws
+*.ipr
+.classpath
+.project
+.settings/
+*.eclipse
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Logs ###
+*.log
+logs/
+
+### Keystores / secrets — never commit these ###
+*.p12
+*.jks
+*.pfx
+*.crt
+*.cer
+config/keystore*
+config/truststore*
