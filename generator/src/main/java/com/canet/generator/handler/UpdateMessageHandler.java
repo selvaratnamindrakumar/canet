@@ -16,10 +16,9 @@ import java.util.UUID;
 /**
  * Processes each captured UDP packet:
  *  1. Computes MD5 hash of the raw payload.
- *  2. Encodes the payload as hex (always) and optionally as Base64.
- *  3. Calls the validator's POST /api/validator/record endpoint.
- *
- * No database access occurs here — all persistence is delegated to the validator.
+ *  2. Encodes the payload as hex; optionally also as Base64.
+ *  3. Sanitises the payload string (strips whitespace and control characters).
+ *  4. Calls POST /api/validator/create with identity headers + JSON body.
  */
 @Slf4j
 @Component
@@ -28,16 +27,10 @@ public class UpdateMessageHandler {
 
     private final ValidatorClient validatorClient;
 
-    /**
-     * When true, Base64-encodes the raw payload bytes and includes them in
-     * the request body alongside the hex encoding.
-     * Set enable.base64.payload=true in application.properties.
-     */
     @Value("${enable.base64.payload:false}")
     private boolean enableBase64Payload;
 
-    // MD5 — maintained as per existing design.
-    // ThreadLocal reuses the digest per worker thread to avoid per-packet allocation.
+    // ThreadLocal reuses the digest per worker thread.
     private static final ThreadLocal<MessageDigest> MD5 = ThreadLocal.withInitial(() -> {
         try {
             return MessageDigest.getInstance("MD5");
@@ -67,30 +60,21 @@ public class UpdateMessageHandler {
         long start = System.currentTimeMillis();
 
         try {
-            String hash       = computeMd5(payloadBytes);
-            String ggasId     = UUID.randomUUID().toString();
-            String payloadHex = HexFormat.of().formatHex(payloadBytes);
-            String payloadB64 = enableBase64Payload
-                    ? Base64.getEncoder().encodeToString(payloadBytes)
-                    : null;
+            String hash   = computeMd5(payloadBytes);
+            String uuid   = UUID.randomUUID().toString();
+            String payload = buildPayload(payloadBytes);
 
-            log.debug("Thread={} seq={} hash={} src={}:{} dst={}:{} payloadBytes={} base64={}",
+            log.debug("Thread={} seq={} hash={} src={}:{} dst={}:{} payloadBytes={}",
                     threadName, sequenceNumber, hash,
-                    srcIp, srcPort, dstIp, dstPort,
-                    payloadBytes.length, enableBase64Payload);
+                    srcIp, srcPort, dstIp, dstPort, payloadBytes.length);
 
             ValidatorClient.RegistrationResult result =
-                    validatorClient.register(
-                            hash, ggasId,
-                            srcIp, srcPort,
-                            dstIp, dstPort,
-                            payloadHex, payloadB64,
-                            sequenceNumber, receivedAt);
+                    validatorClient.create(hash, uuid, receivedAt, null, srcIp, srcPort, payload);
 
-            switch (result) {
-                case CREATED   -> log.debug("seq={} registered hash={}", sequenceNumber, hash);
-                case DUPLICATE -> log.debug("seq={} duplicate hash={} — skipped", sequenceNumber, hash);
-                case ERROR     -> log.warn("seq={} validator registration failed hash={}", sequenceNumber, hash);
+            if (result == ValidatorClient.RegistrationResult.CREATED) {
+                log.debug("seq={} registered hash={}", sequenceNumber, hash);
+            } else {
+                log.warn("seq={} validator /create failed hash={}", sequenceNumber, hash);
             }
 
             long elapsed = System.currentTimeMillis() - start;
@@ -101,6 +85,20 @@ public class UpdateMessageHandler {
         } catch (Exception e) {
             log.error("Thread={} seq={} handleMessage failed", threadName, sequenceNumber, e);
         }
+    }
+
+    /**
+     * Build the payload string to include in the JSON body.
+     * Uses Base64 when enabled; otherwise hex.
+     * Strips all whitespace and control characters so the value is safe
+     * inside a single-line JSON field.
+     */
+    private String buildPayload(byte[] payloadBytes) {
+        String raw = enableBase64Payload
+                ? Base64.getEncoder().encodeToString(payloadBytes)
+                : HexFormat.of().formatHex(payloadBytes);
+        // Remove newlines, carriage returns, tabs, and spaces
+        return raw.replaceAll("[\\s\\r\\n\\t]", "");
     }
 
     private String computeMd5(byte[] data) {

@@ -3,10 +3,8 @@ package com.canet.generator.client;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.Instant;
@@ -16,11 +14,12 @@ import java.util.Map;
 /**
  * HTTP client that calls the validator service.
  *
- * The generator has no direct database access — all persistence and
- * duplicate detection is delegated to the validator via these endpoints:
+ *   POST /api/validator/create — register a captured packet hash
+ *     Headers: OUTBOUND_FILE_HASH, OUTBOUND_FILE_ID, OUTBOUND_FILE_TIME, OUTBOUND_FILE_NAME
+ *     Body:    { sourceIp, sourcePort, payload }
  *
- *   POST /api/validator/record  — register a captured packet hash
- *   GET  /api/validator/exists  — check whether a hash exists (optional use)
+ *   POST /api/validator/racs   — check whether a hash is present
+ *     Header:  hash.value
  */
 @Slf4j
 @Component
@@ -32,52 +31,43 @@ public class ValidatorClient {
     @Value("${validator.base-url:http://localhost:8080}")
     private String validatorBaseUrl;
 
-    public enum RegistrationResult { CREATED, DUPLICATE, ERROR }
+    public enum RegistrationResult { CREATED, ERROR }
 
     /**
-     * Register a captured packet with the validator.
+     * Register a captured packet with the validator via POST /api/validator/create.
      *
-     * The JSON body always includes:
-     *   hashValue, ggasId, srcIp, srcPort, dstIp, dstPort,
-     *   payloadHex, sequenceNumber, receivedAt.
+     * Outbound headers carry the identity fields; the JSON body carries
+     * network metadata (sourceIp, sourcePort, sanitised payload).
      *
-     * When enable.base64.payload=true the handler supplies a non-null
-     * payloadBase64 and it is included as an additional field.
-     *
-     * @return CREATED   — validator accepted the record (HTTP 201)
-     *         DUPLICATE — validator's time-window dedup rejected it (HTTP 409)
-     *         ERROR     — any other outcome
+     * @return CREATED — validator accepted the record (HTTP 201)
+     *         ERROR   — any other outcome
      */
-    public RegistrationResult register(String  hash,
-                                       String  ggasId,
-                                       String  srcIp,
-                                       int     srcPort,
-                                       String  dstIp,
-                                       int     dstPort,
-                                       String  payloadHex,
-                                       String  payloadBase64,
-                                       long    sequenceNumber,
-                                       Instant receivedAt) {
+    public RegistrationResult create(String  hash,
+                                     String  uuid,
+                                     Instant receivedAt,
+                                     String  fileName,
+                                     String  srcIp,
+                                     int     srcPort,
+                                     String  payload) {
         try {
-            // LinkedHashMap preserves insertion order in the serialised JSON —
-            // useful when reading logs or debugging.
-            Map<String, Object> body = new LinkedHashMap<>();
-            body.put("hashValue",      hash);
-            body.put("ggasId",         ggasId);
-            body.put("srcIp",          srcIp  != null ? srcIp  : "");
-            body.put("srcPort",        srcPort);
-            body.put("dstIp",          dstIp  != null ? dstIp  : "");
-            body.put("dstPort",        dstPort);
-            body.put("payloadHex",     payloadHex != null ? payloadHex : "");
-            if (payloadBase64 != null) {
-                body.put("payloadBase64", payloadBase64);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("OUTBOUND_FILE_HASH", hash);
+            headers.set("OUTBOUND_FILE_ID",   uuid);
+            headers.set("OUTBOUND_FILE_TIME", receivedAt.toString());
+            if (fileName != null && !fileName.isBlank()) {
+                headers.set("OUTBOUND_FILE_NAME", fileName);
             }
-            body.put("sequenceNumber", sequenceNumber);
-            body.put("receivedAt",     receivedAt.toString());
 
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("sourceIp",   srcIp != null ? srcIp : "");
+            body.put("sourcePort", srcPort);
+            body.put("payload",    payload != null ? payload : "");
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
             ResponseEntity<Map> response = restTemplate.postForEntity(
-                    validatorBaseUrl + "/api/validator/record",
-                    body,
+                    validatorBaseUrl + "/api/validator/create",
+                    request,
                     Map.class
             );
 
@@ -85,29 +75,32 @@ public class ValidatorClient {
                     ? RegistrationResult.CREATED
                     : RegistrationResult.ERROR;
 
-        } catch (HttpClientErrorException.Conflict e) {
-            // 409 — validator's time-window dedup rejected the record
-            return RegistrationResult.DUPLICATE;
-
         } catch (Exception e) {
-            log.error("Validator registration failed hash={} src={}:{} dst={}:{}: {}",
-                    hash, srcIp, srcPort, dstIp, dstPort, e.getMessage());
+            log.error("Validator /create failed hash={} src={}:{}: {}", hash, srcIp, srcPort, e.getMessage());
             return RegistrationResult.ERROR;
         }
     }
 
     /**
-     * Check whether a hash exists within the validator's time window.
-     * Used for optional pre-flight checks; dedup is enforced server-side.
+     * Check whether a hash exists in the validator via POST /api/validator/racs.
+     * hash.value is sent as an HTTP header.
+     *
+     * @return true if the validator returns 200 (found); false for 204 or any error
      */
-    public boolean exists(String hash) {
+    public boolean racs(String hash) {
         try {
-            String url = validatorBaseUrl + "/api/validator/exists?hash=" + hash;
-            ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);
-            if (response.getBody() == null) return false;
-            return Boolean.TRUE.equals(response.getBody().get("exists"));
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("hash.value", hash);
+            HttpEntity<Void> request = new HttpEntity<>(headers);
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    validatorBaseUrl + "/api/validator/racs",
+                    HttpMethod.POST,
+                    request,
+                    Map.class
+            );
+            return response.getStatusCode() == HttpStatus.OK;
         } catch (Exception e) {
-            log.error("Validator exists check failed hash={}: {}", hash, e.getMessage());
+            log.error("Validator /racs failed hash={}: {}", hash, e.getMessage());
             return false;
         }
     }

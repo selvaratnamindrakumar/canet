@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -17,23 +18,23 @@ import java.util.UUID;
 /**
  * Validator REST surface.
  *
- * POST /api/validator/record
+ * POST /api/validator/create
  *   Generator registers every captured UDP packet.
- *   Duplicate hashes are accepted — different payloads can produce the
- *   same MD5 hash.  Each call inserts a new row; MySQL assigns the id.
- *   The arrival time stored is the capture-time instant from the generator,
- *   not the current server time.
+ *   Required headers: OUTBOUND_FILE_HASH, OUTBOUND_FILE_ID
+ *   Optional headers: OUTBOUND_FILE_TIME, OUTBOUND_FILE_NAME
+ *   JSON body (logged, not persisted): sourceIp, sourcePort, payload
  *   Returns 201 Created on success.
  *
- * GET /api/validator/exists?hash={md5}
+ * POST /api/validator/racs
  *   Middle tier checks whether a hash is present in the database.
- *   200 — hash found       (body contains uuid and arrivalTime)
+ *   Required header: hash.value
+ *   200 — hash found       (body: hash, uuid, arrivalTime)
  *   204 — hash not found   (no body)
- *   404 — hash param missing or blank
+ *   400 — hash.value header missing or blank
  *   500 — unexpected error
  *
  * GET /api/validator/health
- *   Plain-text liveness check — open in any browser.
+ *   Plain-text liveness check.
  */
 @Slf4j
 @RestController
@@ -51,41 +52,54 @@ public class ValidatorController {
         return ResponseEntity.ok("Validator OK");
     }
 
-    // ─── Register ────────────────────────────────────────────────────
+    // ─── Create ──────────────────────────────────────────────────────
 
     /**
-     * Persist a captured packet hash.  Duplicates are allowed.
+     * Persist a captured packet hash.
      *
-     * Minimal required field: hashValue.
-     * ggasId defaults to a fresh UUID when absent.
-     * receivedAt defaults to the current instant when absent (generator
-     * should always supply it so the stored time reflects true arrival).
+     * Headers read:
+     *   OUTBOUND_FILE_HASH  — MD5 hex of the payload (required)
+     *   OUTBOUND_FILE_ID    — UUID assigned by the generator (optional; generated if absent)
+     *   OUTBOUND_FILE_TIME  — ISO-8601 capture instant (optional; defaults to now)
+     *   OUTBOUND_FILE_NAME  — original filename / label (optional; logged only)
+     *
+     * JSON body fields (optional; logged but not stored in DB):
+     *   sourceIp, sourcePort, payload (sanitised by generator)
      *
      * 201 Created — row inserted; body: { id, uuid, arrivalTime }
+     * 400         — OUTBOUND_FILE_HASH header missing or blank
      * 500         — unexpected error
      */
-    @PostMapping("/record")
-    public ResponseEntity<Map<String, Object>> registerRecord(
-            @RequestBody RecordRequest request) {
+    @PostMapping("/create")
+    public ResponseEntity<Map<String, Object>> create(
+            @RequestHeader(value = "OUTBOUND_FILE_HASH",  required = false) String fileHash,
+            @RequestHeader(value = "OUTBOUND_FILE_ID",    required = false) String fileId,
+            @RequestHeader(value = "OUTBOUND_FILE_TIME",  required = false) String fileTime,
+            @RequestHeader(value = "OUTBOUND_FILE_NAME",  required = false) String fileName,
+            @RequestBody(required = false) CreateRequest body) {
 
-        log.debug("record hash={} uuid={}", request.hashValue(), request.ggasId());
+        if (fileHash == null || fileHash.isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                    "error", "OUTBOUND_FILE_HASH header is required"));
+        }
+
+        log.debug("create hash={} id={} time={} name={}", fileHash, fileId, fileTime, fileName);
+        if (body != null) {
+            log.debug("create body srcIp={} srcPort={} payloadLength={}",
+                    body.sourceIp(), body.sourcePort(),
+                    body.payload() != null ? body.payload().length() : 0);
+        }
 
         try {
-            Instant arrivalTime = request.receivedAt() != null
-                    ? request.receivedAt()
-                    : Instant.now();
-
-            String uuid = (request.ggasId() != null && !request.ggasId().isBlank())
-                    ? request.ggasId()
-                    : UUID.randomUUID().toString();
+            Instant arrivalTime = parseInstant(fileTime);
+            String uuid = (fileId != null && !fileId.isBlank()) ? fileId : UUID.randomUUID().toString();
 
             CapturedMessage saved = database.save(CapturedMessage.builder()
-                    .fileHash(request.hashValue())
+                    .fileHash(fileHash)
                     .uuid(uuid)
                     .arrivalTime(arrivalTime)
                     .build());
 
-            // Notify Diosma asynchronously — does not block this response.
             diosmaClient.notify(saved);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
@@ -95,46 +109,41 @@ public class ValidatorController {
             ));
 
         } catch (Exception e) {
-            log.error("registerRecord failed hash={}", request.hashValue(), e);
+            log.error("create failed hash={}", fileHash, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
-                    "error", "Internal error: " + e.getMessage()
-            ));
+                    "error", "Internal error: " + e.getMessage()));
         }
     }
 
-    // ─── Exists ──────────────────────────────────────────────────────
+    // ─── RACS ────────────────────────────────────────────────────────
 
     /**
      * Check whether a file hash is present in the database.
      *
-     * GET /api/validator/exists?hash={md5}
+     * POST /api/validator/racs
+     * Required header: hash.value
      *
      * 200 — found:     { "hash": "...", "uuid": "...", "arrivalTime": "..." }
      * 204 — not found: (no body)
-     * 404 — hash parameter missing or blank
+     * 400 — hash.value header missing or blank
      * 500 — unexpected error
-     *
-     * Browser test:
-     *   http://host:8080/api/validator/exists?hash=d41d8cd98f00b204e9800998ecf8427e
      */
-    @GetMapping("/exists")
-    public ResponseEntity<Map<String, Object>> exists(
-            @RequestParam(required = false) String hash) {
+    @PostMapping("/racs")
+    public ResponseEntity<Map<String, Object>> racs(
+            @RequestHeader(value = "hash.value", required = false) String hashValue) {
 
-        if (hash == null || hash.isBlank()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "error", "hash parameter is required"
-            ));
+        if (hashValue == null || hashValue.isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                    "error", "hash.value header is required"));
         }
 
-        log.debug("exists hash={}", hash);
+        log.debug("racs hash={}", hashValue);
 
         try {
-            Optional<CapturedMessage> record = database.findLatestByHash(hash);
+            Optional<CapturedMessage> record = database.findLatestByHash(hashValue);
 
             if (record.isEmpty()) {
-                // 204 No Content — hash not in database
-                return ResponseEntity.noContent().build();
+                return ResponseEntity.noContent().build(); // 204
             }
 
             CapturedMessage r = record.get();
@@ -145,31 +154,34 @@ public class ValidatorController {
             ));
 
         } catch (Exception e) {
-            log.error("exists check failed hash={}", hash, e);
+            log.error("racs check failed hash={}", hashValue, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
-                    "error", "Internal error: " + e.getMessage()
-            ));
+                    "error", "Internal error: " + e.getMessage()));
         }
     }
 
-    // ─── DTO ─────────────────────────────────────────────────────────
+    // ─── Helpers ─────────────────────────────────────────────────────
+
+    private Instant parseInstant(String value) {
+        if (value == null || value.isBlank()) return Instant.now();
+        try {
+            return Instant.parse(value);
+        } catch (DateTimeParseException e) {
+            log.warn("OUTBOUND_FILE_TIME '{}' is not a valid ISO-8601 instant — using now", value);
+            return Instant.now();
+        }
+    }
+
+    // ─── DTOs ────────────────────────────────────────────────────────
 
     /**
-     * All fields are optional at the HTTP level — only hashValue is meaningful.
-     * Extra fields sent by the generator (srcIp, dstPort, payloadHex, etc.)
-     * are accepted and silently ignored so the generator does not need to be
-     * changed if the schema evolves.
+     * Optional JSON body for /create.
+     * Fields are logged for diagnostics; none are stored in the database.
+     * Unknown extra fields are ignored.
      */
-    public record RecordRequest(
-            String  hashValue,
-            String  ggasId,
-            String  srcIp,
-            Integer srcPort,
-            String  dstIp,
-            Integer dstPort,
-            String  payloadHex,
-            String  payloadBase64,
-            Long    sequenceNumber,
-            Instant receivedAt
+    public record CreateRequest(
+            String  sourceIp,
+            Integer sourcePort,
+            String  payload
     ) {}
 }
