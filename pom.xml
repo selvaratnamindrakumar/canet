@@ -21,6 +21,7 @@
   <modules>
     <module>generator</module>
     <module>validator</module>
+    <module>diosma</module>
   </modules>
 
   <properties>
