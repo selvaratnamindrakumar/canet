@@ -1,5 +1,6 @@
 package com.canet.generator.handler;
 
+import com.canet.generator.client.DiosmaClient;
 import com.canet.generator.client.ValidatorClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,9 +17,10 @@ import java.util.UUID;
 /**
  * Processes each captured UDP packet:
  *  1. Computes MD5 hash of the raw payload.
- *  2. Encodes the payload as hex; optionally also as Base64.
- *  3. Sanitises the payload string (strips whitespace and control characters).
- *  4. Calls POST /api/validator/create with identity headers + JSON body.
+ *  2. Encodes the payload as hex (optionally Base64); strips all whitespace.
+ *  3. POST /api/validator/create  — persists the hash.
+ *  4. On 201, POST to Diosma     — sends the payload for independent verification.
+ *     Diosma recalculates the hash from the payload and calls /racs to confirm.
  */
 @Slf4j
 @Component
@@ -26,6 +28,7 @@ import java.util.UUID;
 public class UpdateMessageHandler {
 
     private final ValidatorClient validatorClient;
+    private final DiosmaClient    diosmaClient;
 
     @Value("${enable.base64.payload:false}")
     private boolean enableBase64Payload;
@@ -49,32 +52,37 @@ public class UpdateMessageHandler {
      * @param receivedAt     capture-time wall-clock instant
      */
     public void handleMessage(byte[] payloadBytes,
-                              int    srcPort,
-                              String srcIp,
-                              int    dstPort,
-                              String dstIp,
-                              long   sequenceNumber,
+                              int     srcPort,
+                              String  srcIp,
+                              int     dstPort,
+                              String  dstIp,
+                              long    sequenceNumber,
                               Instant receivedAt) {
 
         String threadName = Thread.currentThread().getName();
         long start = System.currentTimeMillis();
 
         try {
-            String hash   = computeMd5(payloadBytes);
-            String uuid   = UUID.randomUUID().toString();
+            String hash    = computeMd5(payloadBytes);
+            String uuid    = UUID.randomUUID().toString();
             String payload = buildPayload(payloadBytes);
 
             log.info("Thread={} seq={} hash={} src={}:{} dst={}:{} payloadBytes={}",
                     threadName, sequenceNumber, hash,
                     srcIp, srcPort, dstIp, dstPort, payloadBytes.length);
 
+            // Step 1 — register with validator
             ValidatorClient.RegistrationResult result =
-                    validatorClient.create(hash, uuid, receivedAt, null, srcIp, srcPort, payload);
+                    validatorClient.create(hash, uuid, receivedAt, uuid, srcIp, srcPort, payload);
 
             if (result == ValidatorClient.RegistrationResult.CREATED) {
                 log.info("seq={} registered hash={} uuid={}", sequenceNumber, hash, uuid);
+
+                // Step 2 — notify Diosma only after confirmed storage
+                diosmaClient.postPayload(payload, uuid, srcIp, srcPort, receivedAt);
+
             } else {
-                log.warn("seq={} validator /create failed hash={}", sequenceNumber, hash);
+                log.warn("seq={} validator /create failed hash={} — Diosma NOT notified", sequenceNumber, hash);
             }
 
             long elapsed = System.currentTimeMillis() - start;
@@ -88,16 +96,13 @@ public class UpdateMessageHandler {
     }
 
     /**
-     * Build the payload string to include in the JSON body.
-     * Uses Base64 when enabled; otherwise hex.
-     * Strips all whitespace and control characters so the value is safe
-     * inside a single-line JSON field.
+     * Encodes payload as hex (default) or Base64 and strips all whitespace/
+     * control characters so the value is safe inside a JSON field.
      */
     private String buildPayload(byte[] payloadBytes) {
         String raw = enableBase64Payload
                 ? Base64.getEncoder().encodeToString(payloadBytes)
                 : HexFormat.of().formatHex(payloadBytes);
-        // Remove newlines, carriage returns, tabs, and spaces
         return raw.replaceAll("[\\s\\r\\n\\t]", "");
     }
 
