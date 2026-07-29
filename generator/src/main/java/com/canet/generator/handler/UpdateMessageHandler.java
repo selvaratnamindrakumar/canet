@@ -64,7 +64,7 @@ public class UpdateMessageHandler {
             String uuid   = UUID.randomUUID().toString();
             String payload = buildPayload(payloadBytes);
 
-            log.debug("Thread={} seq={} hash={} src={}:{} dst={}:{} payloadBytes={}",
+            log.info("Thread={} seq={} hash={} src={}:{} dst={}:{} payloadBytes={}",
                     threadName, sequenceNumber, hash,
                     srcIp, srcPort, dstIp, dstPort, payloadBytes.length);
 
@@ -72,7 +72,7 @@ public class UpdateMessageHandler {
                     validatorClient.create(hash, uuid, receivedAt, null, srcIp, srcPort, payload);
 
             if (result == ValidatorClient.RegistrationResult.CREATED) {
-                log.debug("seq={} registered hash={}", sequenceNumber, hash);
+                log.info("seq={} registered hash={} uuid={}", sequenceNumber, hash, uuid);
             } else {
                 log.warn("seq={} validator /create failed hash={}", sequenceNumber, hash);
             }
