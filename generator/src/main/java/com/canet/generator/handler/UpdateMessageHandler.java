@@ -63,9 +63,10 @@ public class UpdateMessageHandler {
         long start = System.currentTimeMillis();
 
         try {
-            String hash    = computeMd5(payloadBytes);
-            String uuid    = UUID.randomUUID().toString();
-            String payload = buildPayload(payloadBytes);
+            String hash       = computeMd5(payloadBytes);
+            String uuid       = UUID.randomUUID().toString();
+            String payloadHex = HexFormat.of().formatHex(payloadBytes);   // always hex
+            String payload    = buildPayload(payloadBytes);                // hex or base64 per config
 
             log.info("Thread={} seq={} hash={} src={}:{} dst={}:{} payloadBytes={}",
                     threadName, sequenceNumber, hash,
@@ -78,8 +79,9 @@ public class UpdateMessageHandler {
             if (result == ValidatorClient.RegistrationResult.CREATED) {
                 log.info("seq={} registered hash={} uuid={}", sequenceNumber, hash, uuid);
 
-                // Step 2 — notify Diosma only after confirmed storage
-                diosmaClient.postPayload(payload, uuid, srcIp, srcPort, receivedAt);
+                // Step 2 — notify Diosma only after confirmed storage.
+                // Always send hex so Diosma can decode bytes and recompute MD5.
+                diosmaClient.postPayload(payloadHex, uuid, srcIp, srcPort, receivedAt);
 
             } else {
                 log.warn("seq={} validator /create failed hash={} — Diosma NOT notified", sequenceNumber, hash);
