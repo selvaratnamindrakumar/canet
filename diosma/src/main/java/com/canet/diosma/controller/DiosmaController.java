@@ -106,10 +106,10 @@ public class DiosmaController {
             return ResponseEntity.badRequest().body(Map.of("status", "error", "reason", "payload missing"));
         }
 
-        // Recalculate MD5 from the received hex payload
+        // Recalculate MD5 — try hex first, fall back to Base64
         String computedHash;
         try {
-            byte[] payloadBytes = HexFormat.of().parseHex(payloadHex);
+            byte[] payloadBytes = decodePayload(payloadHex);
             computedHash = computeMd5(payloadBytes);
             log.info("  Computed hash={}", computedHash);
         } catch (Exception e) {
@@ -161,6 +161,23 @@ public class DiosmaController {
             errors.incrementAndGet();
             log.error("  /racs call failed hash={} url={}: {}", hash, url, e.getMessage());
             return "error";
+        }
+    }
+
+    /**
+     * Decodes a payload string to raw bytes.
+     * Tries hex first; if the string contains non-hex characters falls back to Base64.
+     */
+    private byte[] decodePayload(String payload) {
+        try {
+            byte[] bytes = HexFormat.of().parseHex(payload);
+            log.debug("  payload decoded as hex ({} bytes)", bytes.length);
+            return bytes;
+        } catch (IllegalArgumentException e) {
+            log.debug("  hex decode failed ({}), retrying as Base64", e.getMessage());
+            byte[] bytes = java.util.Base64.getDecoder().decode(payload);
+            log.debug("  payload decoded as Base64 ({} bytes)", bytes.length);
+            return bytes;
         }
     }
 
