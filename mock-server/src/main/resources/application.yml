@@ -8,3 +8,10 @@ server:
 logging:
   level:
     com.canet: DEBUG
+
+# ── Load test configuration ───────────────────────────────────────────────────
+mock:
+  # Artificial response delay injected into all /loadtest endpoints (milliseconds).
+  # Set > 0 to simulate a slow upstream API and test main-app timeout handling.
+  # Override via env var: MOCK_RESPONSE_DELAY_MS=200
+  response-delay-ms: 0
