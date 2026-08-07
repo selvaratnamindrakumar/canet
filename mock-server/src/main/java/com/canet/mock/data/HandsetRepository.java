@@ -35,6 +35,9 @@ import java.util.stream.Collectors;
  *   861234567890123   86123456   Vivo X90 Pro+
  *   352345678901234   35234567   Motorola Razr 40 Ultra
  *
+ * Generated load-test TACs (10000000–10000999) are also resolved via
+ * HandsetDataGenerator — paste output from /loadtest/tacs into the UI.
+ *
  * The nested {@code network} and {@code capabilities} objects are flattened by the
  * main app (flatten-separator: "-") into columns such as:
  *   network-generations, network-type, capabilities-nfc, capabilities-wirelessCharging
@@ -102,7 +105,16 @@ public class HandsetRepository {
     }
 
     public Optional<HandsetRecord> findByTac(String tac) {
-        return Optional.ofNullable(byTac.get(tac));
+        HandsetRecord record = byTac.get(tac);
+        if (record != null) return Optional.of(record);
+        // Fall back to generated records for load-test TAC range (10000000–10000999)
+        if (tac.length() == 8 && tac.startsWith("10")) {
+            try {
+                int index = Integer.parseInt(tac.substring(2));
+                if (index < 1_000) return Optional.of(HandsetDataGenerator.generate(index));
+            } catch (NumberFormatException ignored) {}
+        }
+        return Optional.empty();
     }
 
     public TacSearchResponse findByTacs(List<String> tacs) {
