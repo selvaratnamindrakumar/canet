@@ -342,10 +342,9 @@ mapping:
     - sourceColumnName: "sector_code"
       targetColumnName: "SECTOR_CODE"
       expectedType: STRING
-      nullable: false
+      nullable: true
       transformations: [TRIM, UPPERCASE]
       validation:
-        minLength: 1
         maxLength: 5
 
     # ==========================================================================
