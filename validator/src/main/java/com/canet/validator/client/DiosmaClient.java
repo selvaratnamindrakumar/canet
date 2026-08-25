@@ -60,7 +60,7 @@ public class DiosmaClient {
 
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("fileHash",    record.getFileHash());
-            body.put("uuid",        record.getUuid() != null ? record.getUuid() : "");
+            body.put("fileName",    record.getFileName() != null ? record.getFileName() : "");
             body.put("arrivalTime", record.getArrivalTime().toString());
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);

@@ -13,7 +13,6 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 
 /**
  * Validator REST surface.
@@ -92,11 +91,10 @@ public class ValidatorController {
 
         try {
             Instant arrivalTime = parseInstant(fileTime);
-            String uuid = (fileId != null && !fileId.isBlank()) ? fileId : UUID.randomUUID().toString();
 
             CapturedMessage saved = database.save(CapturedMessage.builder()
                     .fileHash(fileHash)
-                    .uuid(uuid)
+                    .fileName(fileName)
                     .arrivalTime(arrivalTime)
                     .build());
 
@@ -104,7 +102,7 @@ public class ValidatorController {
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                     "id",          saved.getId(),
-                    "uuid",        saved.getUuid(),
+                    "fileId",      fileId != null ? fileId : "",
                     "arrivalTime", saved.getArrivalTime().toString()
             ));
 
@@ -149,7 +147,7 @@ public class ValidatorController {
             CapturedMessage r = record.get();
             return ResponseEntity.ok(Map.of(
                     "hash",        r.getFileHash(),
-                    "uuid",        r.getUuid() != null ? r.getUuid() : "",
+                    "fileName",    r.getFileName() != null ? r.getFileName() : "",
                     "arrivalTime", r.getArrivalTime().toString()
             ));
 

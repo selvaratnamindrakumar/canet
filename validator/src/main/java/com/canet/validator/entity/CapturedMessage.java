@@ -9,32 +9,32 @@ import lombok.NoArgsConstructor;
 import java.time.Instant;
 
 @Entity
-@Table(name = "captured_message",
+@Table(name = "OUTBOUND_FILE", schema = "dbo",
        indexes = {
-           @Index(name = "idx_cm_hash", columnList = "file_hash")
+           @Index(name = "idx_of_hash", columnList = "outbound_file_hash")
        })
+@SequenceGenerator(
+        name       = "outbound_file_seq",
+        sequenceName = "dbo.OUTBOUND_FILE_SEQ",
+        allocationSize = 1
+)
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class CapturedMessage {
 
-    /** Auto-generated primary key — MySQL assigns this on insert. */
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "outbound_file_seq")
+    @Column(name = "outbound_file_id")
     private Long id;
 
-    /** MD5 hex of the raw UDP payload (32 chars).
-     *  Not unique — different payloads can legitimately produce the same hash. */
-    @Column(name = "file_hash", nullable = false, length = 32)
+    @Column(name = "outbound_file_hash", nullable = false, length = 32)
     private String fileHash;
 
-    /** UUID assigned by the generator per captured packet. */
-    @Column(name = "uuid", length = 36)
-    private String uuid;
+    @Column(name = "outbound_file_name", length = 255)
+    private String fileName;
 
-    /** Packet arrival time supplied by the generator — when the packet was
-     *  captured at the network interface, not when this row was written. */
-    @Column(name = "arrival_time", nullable = false)
+    @Column(name = "outbound_file_time", nullable = false)
     private Instant arrivalTime;
 }
