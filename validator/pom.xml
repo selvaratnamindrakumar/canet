@@ -34,6 +34,14 @@
       <scope>runtime</scope>
     </dependency>
 
+    <!-- SQL Server — optional; activated when driver-class-name points to SQLServerDriver -->
+    <dependency>
+      <groupId>com.microsoft.sqlserver</groupId>
+      <artifactId>mssql-jdbc</artifactId>
+      <version>12.6.1.jre11</version>
+      <scope>runtime</scope>
+    </dependency>
+
     <!-- H2 — embedded database for h2 and no-db profiles (no MySQL required) -->
     <dependency>
       <groupId>com.h2database</groupId>
