@@ -17,27 +17,26 @@ import java.util.Optional;
 /**
  * Validator REST surface.
  *
- * POST /api/validator/create
+ * POST /create
  *   Generator registers every captured UDP packet.
  *   Required headers: OUTBOUND_FILE_HASH, OUTBOUND_FILE_ID
  *   Optional headers: OUTBOUND_FILE_TIME, OUTBOUND_FILE_NAME
  *   JSON body (logged, not persisted): sourceIp, sourcePort, payload
  *   Returns 201 Created on success.
  *
- * POST /api/validator/racs
+ * POST /racs
  *   Middle tier checks whether a hash is present in the database.
  *   Required header: hash.value
- *   200 — hash found       (body: hash, uuid, arrivalTime)
+ *   200 — hash found       (body: hash, fileName, arrivalTime)
  *   204 — hash not found   (no body)
  *   400 — hash.value header missing or blank
  *   500 — unexpected error
  *
- * GET /api/validator/health
+ * GET /health
  *   Plain-text liveness check.
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/validator")
 @RequiredArgsConstructor
 public class ValidatorController {
 
@@ -118,7 +117,7 @@ public class ValidatorController {
     /**
      * Check whether a file hash is present in the database.
      *
-     * POST /api/validator/racs
+     * POST /racs
      * Required header: hash.value
      *
      * 200 — found:     { "hash": "...", "uuid": "...", "arrivalTime": "..." }
