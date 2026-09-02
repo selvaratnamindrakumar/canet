@@ -13,19 +13,18 @@ import java.time.Instant;
        indexes = {
            @Index(name = "idx_of_hash", columnList = "outbound_file_hash")
        })
-@SequenceGenerator(
-        name       = "outbound_file_seq",
-        sequenceName = "dbo.OUTBOUND_FILE_SEQ",
-        allocationSize = 1
-)
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class CapturedMessage {
 
+    // IDENTITY works on SQL Server 2008+.
+    // If the column is backed by dbo.OUTBOUND_FILE_SEQ (SQL Server 2012+),
+    // the INSERT still succeeds — SQL Server resolves the IDENTITY value from
+    // the sequence internally; Hibernate does not call NEXT VALUE FOR directly.
     @Id
-    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "outbound_file_seq")
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "outbound_file_id")
     private Long id;
 
