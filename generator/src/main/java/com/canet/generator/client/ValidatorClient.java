@@ -14,11 +14,11 @@ import java.util.Map;
 /**
  * HTTP client that calls the validator service.
  *
- *   POST /api/validator/create — register a captured packet hash
+ *   POST /create — register a captured packet hash
  *     Headers: OUTBOUND_FILE_HASH, OUTBOUND_FILE_ID, OUTBOUND_FILE_TIME, OUTBOUND_FILE_NAME
  *     Body:    { sourceIp, sourcePort, payload }
  *
- *   POST /api/validator/racs   — check whether a hash is present
+ *   POST /racs  — check whether a hash is present
  *     Header:  hash.value
  */
 @Slf4j
@@ -34,10 +34,7 @@ public class ValidatorClient {
     public enum RegistrationResult { CREATED, ERROR }
 
     /**
-     * Register a captured packet with the validator via POST /api/validator/create.
-     *
-     * Outbound headers carry the identity fields; the JSON body carries
-     * network metadata (sourceIp, sourcePort, sanitised payload).
+     * Register a captured packet with the validator via POST /create.
      *
      * @return CREATED — validator accepted the record (HTTP 201)
      *         ERROR   — any other outcome
@@ -66,7 +63,7 @@ public class ValidatorClient {
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
             ResponseEntity<Map> response = restTemplate.postForEntity(
-                    validatorBaseUrl + "/api/validator/create",
+                    validatorBaseUrl + "/create",
                     request,
                     Map.class
             );
@@ -82,7 +79,7 @@ public class ValidatorClient {
     }
 
     /**
-     * Check whether a hash exists in the validator via POST /api/validator/racs.
+     * Check whether a hash exists in the validator via POST /racs.
      * hash.value is sent as an HTTP header.
      *
      * @return true if the validator returns 200 (found); false for 204 or any error
@@ -93,7 +90,7 @@ public class ValidatorClient {
             headers.set("hash.value", hash);
             HttpEntity<Void> request = new HttpEntity<>(headers);
             ResponseEntity<Map> response = restTemplate.exchange(
-                    validatorBaseUrl + "/api/validator/racs",
+                    validatorBaseUrl + "/racs",
                     HttpMethod.POST,
                     request,
                     Map.class
