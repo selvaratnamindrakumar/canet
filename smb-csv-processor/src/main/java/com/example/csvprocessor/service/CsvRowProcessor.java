@@ -109,46 +109,74 @@ public class CsvRowProcessor {
 
         long totalRows = 0, successCount = 0, quarantineCount = 0;
 
-        CSVFormat inputFormat = buildInputFormat(config);
+        // Build the per-line CSVFormat (no header processing — we attach names manually below).
+        // Parsing line-by-line means a malformed row (e.g. unescaped quote inside a quoted
+        // address field) is fully isolated: its CSVParser instance is discarded and the next
+        // line starts a fresh parser, so bad data can never bleed into subsequent rows.
+        CSVFormat lineFormat = buildLineFormat(config);
 
         try (BufferedReader reader = new BufferedReader(
                      new InputStreamReader(new FileInputStream(csvFile), config.getEncoding()),
                      READ_BUFFER);
-             CSVParser parser = new CSVParser(reader, inputFormat);
              PrintWriter successWriter    = openWriter(stagingFile,    config.getEncoding());
              PrintWriter quarantineWriter = openWriter(quarantineFile, config.getEncoding())) {
 
             writeHeader(successWriter,    config, false);
             writeHeader(quarantineWriter, config, true);
 
-            long recordsToSkip = config.getSkipLines();
+            // Read and parse the header row manually so we can attach column names to
+            // the per-line format, keeping record.isMapped() / record.get(name) working.
+            if (config.isHasHeader()) {
+                String headerLine = reader.readLine();
+                if (headerLine != null) {
+                    try (CSVParser hp = CSVParser.parse(headerLine, buildLineFormat(config))) {
+                        List<CSVRecord> hdrs = hp.getRecords();
+                        if (!hdrs.isEmpty()) {
+                            List<String> names = new ArrayList<>();
+                            for (String col : hdrs.get(0)) {
+                                names.add(col.toLowerCase().trim());
+                            }
+                            lineFormat = lineFormat
+                                    .withHeader(names.toArray(new String[0]))
+                                    .withSkipHeaderRecord(false);
+                        }
+                    }
+                }
+            }
 
-            // Use an explicit iterator so that per-record parse failures (e.g. unescaped
-            // quote marks inside a quoted field) can be caught per-row and quarantined,
-            // rather than propagating up and aborting the entire file.
-            Iterator<CSVRecord> iter = parser.iterator();
-            while (iter.hasNext()) {
-                CSVRecord record;
-                try {
-                    record = iter.next();
+            // Skip any additional non-data lines after the header
+            for (int skip = 0; skip < config.getSkipLines(); skip++) {
+                if (reader.readLine() == null) break;
+            }
+
+            String rawLine;
+            while ((rawLine = reader.readLine()) != null) {
+                if (rawLine.isBlank()) continue;
+
+                totalRows++;
+
+                // Parse this single line in isolation.  Any exception (unescaped quote,
+                // mismatched fields, …) is caught here and quarantined without affecting
+                // the lines that follow.
+                CSVRecord record = null;
+                try (CSVParser lp = CSVParser.parse(rawLine, lineFormat)) {
+                    List<CSVRecord> recs = lp.getRecords();
+                    if (!recs.isEmpty()) record = recs.get(0);
                 } catch (Exception parseEx) {
-                    // Malformed CSV row (e.g. unescaped quote) — quarantine this row and continue
-                    totalRows++;
-                    quarantineCount++;
                     log.warn("Malformed CSV row #{} in '{}': {}",
                             totalRows, csvFile.getName(), parseEx.getMessage());
-                    List<String> emptyValues = new ArrayList<>(
-                            Collections.nCopies(config.getFields().size(), ""));
                     quarantineWriter.println(
-                            formatRow(emptyValues, config, false)
+                            formatRow(Collections.nCopies(config.getFields().size(), ""), config, false)
                             + config.getOutputDelimiter()
                             + quoteField("MALFORMED_ROW: " + parseEx.getMessage(), config));
+                    quarantineCount++;
+                    maybeLogAndFlush(totalRows, csvFile.getName(), successCount, quarantineCount,
+                            successWriter, quarantineWriter);
                     continue;
                 }
 
-                if (recordsToSkip > 0) { recordsToSkip--; continue; }
+                if (record == null) continue;
 
-                totalRows++;
                 try {
                     // Build full context map (lower-cased key → raw value) for formula use
                     Map<String, String> rowContext = buildRowContext(record, config);
@@ -174,14 +202,8 @@ public class CsvRowProcessor {
                     quarantineCount++;
                 }
 
-                if (totalRows % LOG_INTERVAL == 0) {
-                    log.info("Progress '{}': {} rows processed (success={}, quarantine={})",
-                            csvFile.getName(), totalRows, successCount, quarantineCount);
-                }
-                if (totalRows % FLUSH_INTERVAL == 0) {
-                    successWriter.flush();
-                    quarantineWriter.flush();
-                }
+                maybeLogAndFlush(totalRows, csvFile.getName(), successCount, quarantineCount,
+                        successWriter, quarantineWriter);
             }
         }
         // Writers are now closed — files are fully written
@@ -425,15 +447,23 @@ public class CsvRowProcessor {
     // Output helpers — IE/AA quoted-uppercase format
     // -------------------------------------------------------------------------
 
-    private CSVFormat buildInputFormat(MappingConfiguration config) {
-        CSVFormat fmt = CSVFormat.DEFAULT
+    private CSVFormat buildLineFormat(MappingConfiguration config) {
+        return CSVFormat.DEFAULT
                 .withDelimiter(config.getInputDelimiter().charAt(0))
-                .withIgnoreEmptyLines(true)
+                .withIgnoreEmptyLines(false)
                 .withTrim(false);
-        if (config.isHasHeader()) {
-            fmt = fmt.withFirstRecordAsHeader().withIgnoreHeaderCase(true);
+    }
+
+    private void maybeLogAndFlush(long row, String name, long success, long quarantine,
+                                   PrintWriter sw, PrintWriter qw) {
+        if (row % LOG_INTERVAL == 0) {
+            log.info("Progress '{}': {} rows processed (success={}, quarantine={})",
+                    name, row, success, quarantine);
         }
-        return fmt;
+        if (row % FLUSH_INTERVAL == 0) {
+            sw.flush();
+            qw.flush();
+        }
     }
 
     private PrintWriter openWriter(File file, String encoding) throws IOException {
