@@ -28,8 +28,10 @@ import java.io.PrintWriter;
 import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -121,7 +123,29 @@ public class CsvRowProcessor {
 
             long recordsToSkip = config.getSkipLines();
 
-            for (CSVRecord record : parser) {
+            // Use an explicit iterator so that per-record parse failures (e.g. unescaped
+            // quote marks inside a quoted field) can be caught per-row and quarantined,
+            // rather than propagating up and aborting the entire file.
+            Iterator<CSVRecord> iter = parser.iterator();
+            while (iter.hasNext()) {
+                CSVRecord record;
+                try {
+                    record = iter.next();
+                } catch (Exception parseEx) {
+                    // Malformed CSV row (e.g. unescaped quote) — quarantine this row and continue
+                    totalRows++;
+                    quarantineCount++;
+                    log.warn("Malformed CSV row #{} in '{}': {}",
+                            totalRows, csvFile.getName(), parseEx.getMessage());
+                    List<String> emptyValues = new ArrayList<>(
+                            Collections.nCopies(config.getFields().size(), ""));
+                    quarantineWriter.println(
+                            formatRow(emptyValues, config, false)
+                            + config.getOutputDelimiter()
+                            + quoteField("MALFORMED_ROW: " + parseEx.getMessage(), config));
+                    continue;
+                }
+
                 if (recordsToSkip > 0) { recordsToSkip--; continue; }
 
                 totalRows++;
