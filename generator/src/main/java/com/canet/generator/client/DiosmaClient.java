@@ -2,6 +2,7 @@ package com.canet.generator.client;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
@@ -14,13 +15,19 @@ import java.util.Map;
  * Posts captured packet data to the Diosma endpoint after the validator
  * has successfully stored the hash (HTTP 201).
  *
- * Diosma receives the payload and independently recalculates the MD5 hash
- * to verify it matches what the validator stored.
+ * All diosma.headers.* properties are sent as HTTP headers automatically.
+ * Add any header in application.properties without touching this class:
  *
- * Disable by leaving diosma.base-url blank in application.properties.
+ *   diosma.headers.X-Application-Id=canet-generator
+ *   diosma.headers.X-Source=canet
+ *   diosma.headers.http.headers.application=<value>
+ *   diosma.headers.http.headers.content.filename=<value>
+ *   diosma.headers.http.headers.qualification=<value>
+ *   diosma.headers.http.headers.subject.dn=<value>
  */
 @Slf4j
 @Component
+@ConfigurationProperties(prefix = "diosma")
 public class DiosmaClient {
 
     private final RestTemplate restTemplate;
@@ -31,42 +38,24 @@ public class DiosmaClient {
     @Value("${diosma.notify-path:/api/diosma/receive}")
     private String notifyPath;
 
-    // Configurable headers sent with every Diosma POST
-    @Value("${diosma.headers.X-Application-Id:canet-generator}")
-    private String appId;
-
-    @Value("${diosma.headers.X-Source:canet}")
-    private String source;
+    // All diosma.headers.* entries are collected here automatically
+    private final Map<String, String> headers = new LinkedHashMap<>();
 
     public DiosmaClient(RestTemplate restTemplate) {
         this.restTemplate = restTemplate;
     }
 
-    /**
-     * POST the captured payload to Diosma.
-     *
-     * JSON body:
-     * {
-     *   "payload":     "<hex-encoded bytes>",
-     *   "sourceIp":    "192.168.1.10",
-     *   "sourcePort":  5000,
-     *   "uuid":        "550e8400-...",
-     *   "arrivalTime": "2026-07-28T10:00:00Z"
-     * }
-     *
-     * Headers:
-     *   Content-Type:     application/json
-     *   OUTBOUND_FILE_NAME: <uuid>
-     *   X-Application-Id:   canet-generator
-     *   X-Source:           canet
-     *
-     * @return the Diosma response body as a string (logged by caller)
-     */
-    public String postPayload(String payload,
-                              String uuid,
-                              String srcIp,
-                              int    srcPort,
+    // Called by Spring to populate diosma.headers.*
+    public Map<String, String> getHeaders() {
+        return headers;
+    }
+
+    public String postPayload(String  payload,
+                              String  uuid,
+                              String  srcIp,
+                              int     srcPort,
                               Instant arrivalTime) {
+
         if (diosmaBaseUrl == null || diosmaBaseUrl.isBlank()) {
             log.debug("Diosma disabled — diosma.base-url not set");
             return null;
@@ -74,11 +63,15 @@ public class DiosmaClient {
 
         String url = diosmaBaseUrl + notifyPath;
         try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("OUTBOUND_FILE_NAME",  uuid);
-            headers.set("X-Application-Id",    appId);
-            headers.set("X-Source",             source);
+            HttpHeaders httpHeaders = new HttpHeaders();
+            httpHeaders.setContentType(MediaType.APPLICATION_JSON);
+
+            // Forward every diosma.headers.* property as an HTTP header
+            headers.forEach((name, value) -> {
+                if (value != null && !value.isBlank()) {
+                    httpHeaders.set(name, value);
+                }
+            });
 
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("payload",     payload);
@@ -87,7 +80,7 @@ public class DiosmaClient {
             body.put("uuid",        uuid);
             body.put("arrivalTime", arrivalTime.toString());
 
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, httpHeaders);
 
             ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
 

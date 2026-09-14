@@ -17,10 +17,8 @@ import java.util.UUID;
 /**
  * Processes each captured UDP packet:
  *  1. Computes MD5 hash of the raw payload.
- *  2. Encodes the payload as hex (optionally Base64); strips all whitespace.
- *  3. POST /api/validator/create  — persists the hash.
- *  4. On 201, POST to Diosma     — sends the payload for independent verification.
- *     Diosma recalculates the hash from the payload and calls /racs to confirm.
+ *  2. POST /create  — persists the hash.
+ *  3. On 201, POST to Diosma — sends payload for independent verification.
  */
 @Slf4j
 @Component
@@ -33,7 +31,6 @@ public class UpdateMessageHandler {
     @Value("${enable.base64.payload:false}")
     private boolean enableBase64Payload;
 
-    // ThreadLocal reuses the digest per worker thread.
     private static final ThreadLocal<MessageDigest> MD5 = ThreadLocal.withInitial(() -> {
         try {
             return MessageDigest.getInstance("MD5");
@@ -42,15 +39,6 @@ public class UpdateMessageHandler {
         }
     });
 
-    /**
-     * @param payloadBytes   raw UDP payload bytes
-     * @param srcPort        source port from the UDP header
-     * @param srcIp          source IP address (null if not IPv4)
-     * @param dstPort        destination port from the UDP header
-     * @param dstIp          destination IP address (null if not IPv4)
-     * @param sequenceNumber capture-time monotonic sequence number
-     * @param receivedAt     capture-time wall-clock instant
-     */
     public void handleMessage(byte[] payloadBytes,
                               int     srcPort,
                               String  srcIp,
@@ -65,24 +53,19 @@ public class UpdateMessageHandler {
         try {
             String hash       = computeMd5(payloadBytes);
             String uuid       = UUID.randomUUID().toString();
-            String payloadHex = HexFormat.of().formatHex(payloadBytes);   // always hex
-            String payload    = buildPayload(payloadBytes);                // hex or base64 per config
+            String payloadHex = HexFormat.of().formatHex(payloadBytes);
+            String payload    = buildPayload(payloadBytes);
 
             log.info("Thread={} seq={} hash={} src={}:{} dst={}:{} payloadBytes={}",
                     threadName, sequenceNumber, hash,
                     srcIp, srcPort, dstIp, dstPort, payloadBytes.length);
 
-            // Step 1 — register with validator
             ValidatorClient.RegistrationResult result =
                     validatorClient.create(hash, uuid, receivedAt, uuid, srcIp, srcPort, payload);
 
             if (result == ValidatorClient.RegistrationResult.CREATED) {
                 log.info("seq={} registered hash={} uuid={}", sequenceNumber, hash, uuid);
-
-                // Step 2 — notify Diosma only after confirmed storage.
-                // Always send hex so Diosma can decode bytes and recompute MD5.
                 diosmaClient.postPayload(payloadHex, uuid, srcIp, srcPort, receivedAt);
-
             } else {
                 log.warn("seq={} validator /create failed hash={} — Diosma NOT notified", sequenceNumber, hash);
             }
@@ -97,10 +80,6 @@ public class UpdateMessageHandler {
         }
     }
 
-    /**
-     * Encodes payload as hex (default) or Base64 and strips all whitespace/
-     * control characters so the value is safe inside a JSON field.
-     */
     private String buildPayload(byte[] payloadBytes) {
         String raw = enableBase64Payload
                 ? Base64.getEncoder().encodeToString(payloadBytes)
