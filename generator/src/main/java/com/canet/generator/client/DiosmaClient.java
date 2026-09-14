@@ -73,9 +73,6 @@ public class DiosmaClient {
                 }
             });
 
-            // content.filename is dynamic — set per packet using the UUID
-            httpHeaders.set("http.headers.content.filename", uuid);
-
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("payload",     payload);
             body.put("sourceIp",    srcIp != null ? srcIp : "");
