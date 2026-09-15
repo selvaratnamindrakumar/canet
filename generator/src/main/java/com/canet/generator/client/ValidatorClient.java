@@ -1,7 +1,7 @@
 package com.canet.generator.client;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
@@ -23,10 +23,13 @@ import java.util.Map;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ValidatorClient {
 
     private final RestTemplate restTemplate;
+
+    public ValidatorClient(@Qualifier("validatorRestTemplate") RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
+    }
 
     @Value("${validator.base-url:http://localhost:8080}")
     private String validatorBaseUrl;

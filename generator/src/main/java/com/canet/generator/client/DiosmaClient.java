@@ -1,6 +1,7 @@
 package com.canet.generator.client;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.http.*;
@@ -41,7 +42,7 @@ public class DiosmaClient {
     // All diosma.headers.* entries are collected here automatically
     private final Map<String, String> headers = new LinkedHashMap<>();
 
-    public DiosmaClient(RestTemplate restTemplate) {
+    public DiosmaClient(@Qualifier("diosmaRestTemplate") RestTemplate restTemplate) {
         this.restTemplate = restTemplate;
     }
 
