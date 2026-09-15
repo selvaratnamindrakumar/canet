@@ -13,6 +13,8 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Processes each captured UDP packet:
@@ -30,6 +32,13 @@ public class UpdateMessageHandler {
 
     @Value("${enable.base64.payload:false}")
     private boolean enableBase64Payload;
+
+    // Single-threaded executor for fire-and-forget Diosma POSTs
+    private final ExecutorService diosmaExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "diosma-poster");
+        t.setDaemon(true);
+        return t;
+    });
 
     private static final ThreadLocal<MessageDigest> MD5 = ThreadLocal.withInitial(() -> {
         try {
@@ -65,7 +74,10 @@ public class UpdateMessageHandler {
 
             if (result == ValidatorClient.RegistrationResult.CREATED) {
                 log.info("seq={} registered hash={} uuid={}", sequenceNumber, hash, uuid);
-                diosmaClient.postPayload(payloadHex, uuid, srcIp, srcPort, receivedAt);
+                final String finalPayloadHex = payloadHex;
+                final String finalSrcIp      = srcIp;
+                diosmaExecutor.submit(() ->
+                        diosmaClient.postPayload(finalPayloadHex, uuid, finalSrcIp, srcPort, receivedAt));
             } else {
                 log.warn("seq={} validator /create failed hash={} — Diosma NOT notified", sequenceNumber, hash);
             }
