@@ -15,7 +15,9 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -58,6 +60,11 @@ public class ZipExtractorService {
 
         log.info("Extracting '{}' → {}", zipFile.getName(), outputDir.getAbsolutePath());
 
+        // Phase 1: stream every CSV entry to a .tmp file.
+        // Keeping final .csv files absent during extraction means the Camel file
+        // consumer cannot pick up the first file while the rest are still being written.
+        Map<File, File> pendingRenames = new LinkedHashMap<>(); // tmpFile → finalFile
+
         try (FileInputStream fis = new FileInputStream(zipFile);
              BufferedInputStream bis = new BufferedInputStream(fis, BUFFER_SIZE);
              ZipInputStream zis = new ZipInputStream(bis)) {
@@ -80,25 +87,32 @@ public class ZipExtractorService {
                         continue;
                     }
 
-                    File tmpFile = new File(outputDir, safeName + ".tmp");
+                    File tmpFile   = new File(outputDir, safeName + ".tmp");
                     File finalFile = new File(outputDir, safeName);
 
                     extractEntry(zis, tmpFile);
-
-                    // Atomic rename — prevents Camel from consuming a partial file
-                    if (!tmpFile.renameTo(finalFile)) {
-                        // renameTo can fail across file-systems; fall back to Files.move
-                        java.nio.file.Files.move(tmpFile.toPath(), finalFile.toPath(),
-                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                    }
-
-                    extracted.add(finalFile.getAbsolutePath());
-                    log.info("Extracted: {} ({} bytes)", safeName, finalFile.length());
+                    pendingRenames.put(tmpFile, finalFile);
+                    log.info("Buffered: {} ({} bytes)", safeName, tmpFile.length());
 
                 } finally {
                     zis.closeEntry();
                 }
             }
+        }
+
+        // Phase 2: rename all .tmp files to .csv in rapid succession so they all
+        // appear in the directory within microseconds of each other.  This ensures
+        // the Camel file consumer sees the complete set in a single poll cycle and
+        // the batch aggregator can merge them into one output file.
+        for (Map.Entry<File, File> rename : pendingRenames.entrySet()) {
+            File tmp   = rename.getKey();
+            File final_ = rename.getValue();
+            if (!tmp.renameTo(final_)) {
+                java.nio.file.Files.move(tmp.toPath(), final_.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            extracted.add(final_.getAbsolutePath());
+            log.info("Extracted: {} ({} bytes)", final_.getName(), final_.length());
         }
 
         log.info("Extraction complete — {} CSV file(s) extracted from '{}'",
