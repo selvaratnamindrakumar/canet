@@ -82,22 +82,39 @@ public class CsvRowProcessor {
     // Public API
     // -------------------------------------------------------------------------
 
+    /** Convenience wrapper — delegates to {@link #processFiles(List)}. */
+    public ProcessingResult processFile(File csvFile) throws IOException {
+        return processFiles(Collections.singletonList(csvFile));
+    }
+
     /**
-     * Processes a single CSV file end-to-end.
+     * Processes one or more CSV files end-to-end, writing all valid rows into
+     * a single merged success file and all invalid rows into a single merged
+     * quarantine file.
      *
-     * @param csvFile the extracted CSV to process
-     * @return summary with row counts and output file references
+     * <p>When the list contains more than one file the output filenames are
+     * prefixed with {@code merged_}; a single file uses its own base name.
+     *
+     * @param csvFiles the extracted CSV files to process (non-null, non-empty)
+     * @return summary with combined row counts and output file references
      * @throws IOException on I/O errors
      */
-    public ProcessingResult processFile(File csvFile) throws IOException {
+    public ProcessingResult processFiles(List<File> csvFiles) throws IOException {
+        if (csvFiles == null || csvFiles.isEmpty()) {
+            log.warn("processFiles called with empty list — nothing to do");
+            return new ProcessingResult("(empty)", 0, 0, 0, null, null);
+        }
+
         MappingConfiguration config = mappingConfigService.getConfiguration();
         String timestamp = new SimpleDateFormat(outputProperties.getTimestampFormat()).format(new Date());
-        String baseName  = sanitiseFileName(stripExtension(csvFile.getName()));
 
-        // Write to .staging first — moved atomically to output dirs only when fully written.
-        // This prevents SftpUploadRoute from picking up a partially-written success file.
-        File stagingDir      = new File(directoryProperties.getOutputSuccess(), ".staging");
-        File quarantineDir   = new File(directoryProperties.getOutputQuarantine());
+        boolean merged = csvFiles.size() > 1;
+        String baseName = merged
+                ? "merged"
+                : sanitiseFileName(stripExtension(csvFiles.get(0).getName()));
+
+        File stagingDir    = new File(directoryProperties.getOutputSuccess(), ".staging");
+        File quarantineDir = new File(directoryProperties.getOutputQuarantine());
         stagingDir.mkdirs();
         quarantineDir.mkdirs();
 
@@ -107,25 +124,71 @@ public class CsvRowProcessor {
         File stagingFile    = new File(stagingDir,    successName);
         File quarantineFile = new File(quarantineDir, quarantineName);
 
-        long totalRows = 0, successCount = 0, quarantineCount = 0;
+        // counts[0]=totalRows  counts[1]=successCount  counts[2]=quarantineCount
+        long[] counts = {0L, 0L, 0L};
 
-        // Build the per-line CSVFormat (no header processing — we attach names manually below).
-        // Parsing line-by-line means a malformed row (e.g. unescaped quote inside a quoted
-        // address field) is fully isolated: its CSVParser instance is discarded and the next
-        // line starts a fresh parser, so bad data can never bleed into subsequent rows.
-        CSVFormat lineFormat = buildLineFormat(config);
-
-        try (BufferedReader reader = new BufferedReader(
-                     new InputStreamReader(new FileInputStream(csvFile), config.getEncoding()),
-                     READ_BUFFER);
-             PrintWriter successWriter    = openWriter(stagingFile,    config.getEncoding());
+        try (PrintWriter successWriter    = openWriter(stagingFile,    config.getEncoding());
              PrintWriter quarantineWriter = openWriter(quarantineFile, config.getEncoding())) {
 
             writeHeader(successWriter,    config, false);
             writeHeader(quarantineWriter, config, true);
 
-            // Read and parse the header row manually so we can attach column names to
-            // the per-line format, keeping record.isMapped() / record.get(name) working.
+            for (File csvFile : csvFiles) {
+                if (merged) log.info("Batch: appending rows from {}", csvFile.getName());
+                appendFileRows(csvFile, config, successWriter, quarantineWriter, counts);
+            }
+        }
+        // Writers are now closed — files are fully written
+
+        long totalRows      = counts[0];
+        long successCount   = counts[1];
+        long quarantineCount = counts[2];
+
+        if (quarantineCount == 0 && quarantineFile.exists()) quarantineFile.delete();
+
+        // Atomically move the completed success file from .staging to output/success/
+        // so SftpUploadRoute only ever sees complete files
+        File successFile = null;
+        if (successCount > 0) {
+            successFile = new File(directoryProperties.getOutputSuccess(), successName);
+            java.nio.file.Files.move(stagingFile.toPath(), successFile.toPath(),
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            log.info("Success file ready for upload: {}", successFile.getName());
+        } else if (stagingFile.exists()) {
+            stagingFile.delete();
+        }
+
+        String srcLabel = merged
+                ? "merged(" + csvFiles.size() + " files)"
+                : csvFiles.get(0).getName();
+
+        log.info("Finished {}: total={}, success={}, quarantine={}",
+                srcLabel, totalRows, successCount, quarantineCount);
+
+        return new ProcessingResult(
+                srcLabel, totalRows, successCount, quarantineCount,
+                successFile,
+                quarantineCount > 0 ? quarantineFile : null);
+    }
+
+    /**
+     * Reads all data rows from {@code csvFile} and appends them to the
+     * already-open success/quarantine writers.  Header and skip-line handling
+     * is performed per-file so that each MNC file in a batch can have its own
+     * header row.
+     */
+    private void appendFileRows(File csvFile, MappingConfiguration config,
+                                 PrintWriter successWriter, PrintWriter quarantineWriter,
+                                 long[] counts) throws IOException {
+        // Parse line-by-line: each raw line gets its own CSVParser instance so that
+        // a malformed row (e.g. unescaped quote in an address field) is fully
+        // isolated and can never corrupt the rows that follow.
+        CSVFormat lineFormat = buildLineFormat(config);
+
+        try (BufferedReader reader = new BufferedReader(
+                     new InputStreamReader(new FileInputStream(csvFile), config.getEncoding()),
+                     READ_BUFFER)) {
+
             if (config.isHasHeader()) {
                 String headerLine = reader.readLine();
                 if (headerLine != null) {
@@ -144,7 +207,6 @@ public class CsvRowProcessor {
                 }
             }
 
-            // Skip any additional non-data lines after the header
             for (int skip = 0; skip < config.getSkipLines(); skip++) {
                 if (reader.readLine() == null) break;
             }
@@ -153,24 +215,21 @@ public class CsvRowProcessor {
             while ((rawLine = reader.readLine()) != null) {
                 if (rawLine.isBlank()) continue;
 
-                totalRows++;
+                counts[0]++; // totalRows
 
-                // Parse this single line in isolation.  Any exception (unescaped quote,
-                // mismatched fields, …) is caught here and quarantined without affecting
-                // the lines that follow.
                 CSVRecord record = null;
                 try (CSVParser lp = CSVParser.parse(rawLine, lineFormat)) {
                     List<CSVRecord> recs = lp.getRecords();
                     if (!recs.isEmpty()) record = recs.get(0);
                 } catch (Exception parseEx) {
                     log.warn("Malformed CSV row #{} in '{}': {}",
-                            totalRows, csvFile.getName(), parseEx.getMessage());
+                            counts[0], csvFile.getName(), parseEx.getMessage());
                     quarantineWriter.println(
                             formatRow(Collections.nCopies(config.getFields().size(), ""), config, false)
                             + config.getOutputDelimiter()
                             + quoteField("MALFORMED_ROW: " + parseEx.getMessage(), config));
-                    quarantineCount++;
-                    maybeLogAndFlush(totalRows, csvFile.getName(), successCount, quarantineCount,
+                    counts[2]++;
+                    maybeLogAndFlush(counts[0], csvFile.getName(), counts[1], counts[2],
                             successWriter, quarantineWriter);
                     continue;
                 }
@@ -178,57 +237,33 @@ public class CsvRowProcessor {
                 if (record == null) continue;
 
                 try {
-                    // Build full context map (lower-cased key → raw value) for formula use
                     Map<String, String> rowContext = buildRowContext(record, config);
-
                     RowResult result = processRow(record, rowContext, config);
 
                     if (result.isValid()) {
                         successWriter.println(formatRow(result.getValues(), config, false));
-                        successCount++;
+                        counts[1]++;
                     } else {
-                        String quarantineLine = formatRow(result.getValues(), config, false)
+                        quarantineWriter.println(
+                                formatRow(result.getValues(), config, false)
                                 + config.getOutputDelimiter()
-                                + quoteField(result.getErrorReason(), config);
-                        quarantineWriter.println(quarantineLine);
-                        quarantineCount++;
+                                + quoteField(result.getErrorReason(), config));
+                        counts[2]++;
                     }
                 } catch (Exception e) {
                     log.warn("Unexpected error at row {} of '{}': {}",
-                            totalRows, csvFile.getName(), e.getMessage());
-                    String rawRow = rawRecordString(record, config);
-                    quarantineWriter.println(rawRow + config.getOutputDelimiter()
+                            counts[0], csvFile.getName(), e.getMessage());
+                    quarantineWriter.println(
+                            rawRecordString(record, config)
+                            + config.getOutputDelimiter()
                             + quoteField("PROCESSING_ERROR: " + e.getMessage(), config));
-                    quarantineCount++;
+                    counts[2]++;
                 }
 
-                maybeLogAndFlush(totalRows, csvFile.getName(), successCount, quarantineCount,
+                maybeLogAndFlush(counts[0], csvFile.getName(), counts[1], counts[2],
                         successWriter, quarantineWriter);
             }
         }
-        // Writers are now closed — files are fully written
-
-        if (quarantineCount == 0 && quarantineFile.exists()) quarantineFile.delete();
-
-        // Atomically move the completed success file from .staging to output/success/
-        // so SftpUploadRoute only ever sees complete files
-        File successFile = null;
-        if (successCount > 0) {
-            successFile = new File(directoryProperties.getOutputSuccess(), successName);
-            java.nio.file.Files.move(stagingFile.toPath(), successFile.toPath(),
-                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-            log.info("Success file ready for upload: {}", successFile.getName());
-        } else if (stagingFile.exists()) {
-            stagingFile.delete();
-        }
-
-        log.info("Finished '{}': total={}, success={}, quarantine={}",
-                csvFile.getName(), totalRows, successCount, quarantineCount);
-
-        return new ProcessingResult(
-                csvFile.getName(), totalRows, successCount, quarantineCount,
-                successFile,
-                quarantineCount > 0 ? quarantineFile : null);
     }
 
     // -------------------------------------------------------------------------

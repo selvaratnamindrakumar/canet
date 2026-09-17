@@ -9,26 +9,23 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
+import java.util.List;
 
 /**
- * Camel route that processes each extracted CSV file line-by-line through the
- * mapping/validation pipeline defined in {@code mapping.yml}.
+ * Camel route that batches all CSV files from one poll cycle and processes
+ * them together, producing a single merged success CSV and a single merged
+ * quarantine CSV.
  *
- * <p>Processing is fully streaming — no CSV file is loaded into memory. Valid rows
- * are written to {@code outputSuccess}; invalid rows are written with an appended
- * {@code QUARANTINE_REASON} column to {@code outputQuarantine}.
+ * <p>Why batching: the source ZIP typically contains multiple CSVs split by
+ * MNC. Processing them together (via {@code completionFromBatchConsumer})
+ * gives the downstream consumer one file to upload rather than one per MNC.
  *
- * <p>After processing:
- * <ul>
- *   <li>The CSV source file is deleted on success (to prevent accumulation) or moved
- *       to {@code .error} if an exception occurs during processing.</li>
- *   <li>Success files in {@code outputSuccess} are picked up by
- *       {@link SftpUploadRoute}.</li>
- * </ul>
- *
- * <p>The {@code readLockTimeout} is set to 2 hours to accommodate very large CSV
- * files.  Adjust {@code processing.directories.input-csv} read-lock settings in
- * {@code application.yml} if needed.
+ * <p>{@code maxMessagesPerPoll=100} ensures all files present at poll time
+ * are consumed in one batch. {@code completionFromBatchConsumer()} tells the
+ * aggregator to trigger as soon as the file component has delivered the whole
+ * poll batch — no artificial wait is added when files arrive together.
+ * {@code completionTimeout(30_000)} is a safety net for the rare case where
+ * the batch-size signal is not delivered.
  */
 @Component
 public class CsvProcessingRoute extends RouteBuilder {
@@ -44,28 +41,32 @@ public class CsvProcessingRoute extends RouteBuilder {
 
         onException(Exception.class)
                 .log(LoggingLevel.ERROR,
-                        "CSV processing failed for '${file:name}': ${exception.message}")
+                        "CSV batch processing failed: ${exception.message}")
                 .handled(true);
 
         from("file:" + directories.getInputCsv()
                 + "?include=.*\\.csv"
                 + "&readLock=changed"
                 + "&readLockCheckInterval=5000"
-                + "&readLockTimeout=7200000"   // 2-hour timeout for very large files
+                + "&readLockTimeout=7200000"
                 + "&delete=true"
                 + "&moveFailed=.error"
-                + "&maxMessagesPerPoll=1"
+                + "&maxMessagesPerPoll=100"
                 + "&sortBy=file:modified")
                 .routeId("csv-processing-route")
-                .log(LoggingLevel.INFO, "Processing CSV: ${file:name} (${file:size} bytes)")
+                .log(LoggingLevel.INFO, "Queuing for batch: ${file:name} (${file:size} bytes)")
+                .aggregate(constant("batch"), new CsvFileAggregationStrategy())
+                    .completionFromBatchConsumer()
+                    .completionTimeout(30_000)
+                .log(LoggingLevel.INFO, "Processing CSV batch: ${body.size()} file(s)")
                 .process(exchange -> {
-                    File csvFile = exchange.getIn().getBody(File.class);
-                    ProcessingResult result = csvRowProcessor.processFile(csvFile);
-                    // Place the result summary in the message body for downstream logging
+                    @SuppressWarnings("unchecked")
+                    List<File> csvFiles = exchange.getIn().getBody(List.class);
+                    ProcessingResult result = csvRowProcessor.processFiles(csvFiles);
                     exchange.getIn().setBody(result);
                 })
                 .log(LoggingLevel.INFO,
-                        "CSV done: ${file:name} — "
+                        "Batch done: ${body.sourceFileName} — "
                         + "total=${body.totalRows}, "
                         + "success=${body.successCount}, "
                         + "quarantine=${body.quarantineCount}");
